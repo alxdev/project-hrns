@@ -1,0 +1,115 @@
+# Python Harness
+
+The project is being built incrementally. The core is intentionally independent
+from the terminal UI so that different interfaces can be added later without
+changing the agent loop.
+
+## Current status: Phase 1
+
+Phase 1 establishes the smallest useful harness:
+
+- Provider-neutral conversation and tool-call types
+- An asynchronous agent loop
+- An Anthropic HTTP provider
+- An OpenAI-compatible HTTP provider
+- A deterministic mock provider for tests
+- `read_file`, `write_file`, and `bash` tools
+- Approval before every tool call
+- A plain terminal runner
+- Tests for the agent loop, tool registry, and permission behavior
+
+Run the application with:
+
+```sh
+export ANTHROPIC_API_KEY=...
+python -m harness
+```
+
+To use OpenAI instead:
+
+```sh
+export HARNESS_PROVIDER=openai
+export OPENAI_API_KEY=...
+python -m harness
+```
+
+The OpenAI provider defaults to `gpt-5`. Set `HARNESS_MODEL` to choose a
+different model. Its configurable `base_url` also makes it suitable for
+OpenAI-compatible local servers when constructed directly in Python.
+
+From the project directory, a local development setup can be created with:
+
+```sh
+python -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+python -m harness
+```
+
+The default model is configurable with `HARNESS_MODEL`. The working directory
+for tools is configurable with `HARNESS_WORKING_DIR`.
+
+## Architecture
+
+```text
+terminal runner ──┐
+                  ├── agent loop ─── provider
+approval policy ──┤        │
+                  │        └── tool registry ─── tools
+event sink ───────┘
+```
+
+The agent loop communicates through small protocols and data objects. It does
+not import the terminal runner or a rendering library.
+
+## Planned phases
+
+### Phase 1 — Core loop
+
+The current phase. Build and verify the minimal async agent loop, provider
+boundary, tools, approval gate, terminal runner, and test seam.
+
+### Phase 2 — Interactive shell
+
+- Rich output and Markdown rendering
+- Better progress feedback
+- Slash commands such as `/help`, `/model`, `/clear`, and `/tools`
+- More explicit configuration
+
+### Phase 3 — Conversation management
+
+- Pluggable compaction strategies
+- Safe history boundaries around tool calls
+- Summarization and compaction logging
+
+### Phase 4 — Input and package refinement
+
+- Improved line editing and history
+- Non-interactive execution mode
+- Stronger tool registration and dependency injection
+- Broader automated test coverage
+
+### Phase 5 — Subagents
+
+- Reusable agent instances
+- Curated tool sets
+- Delegation tools
+- Active-subagent tracking
+
+### Phase 6 — Full terminal UI
+
+- Structured event-driven transcript rendering
+- Scrollback and streaming output
+- Approval dialogs
+- Cancellation and live status indicators
+
+Each phase should preserve the provider-neutral core and update this README
+with what was added and how to run it.
+
+## Development
+
+Run the test suite with:
+
+```sh
+pytest
+```

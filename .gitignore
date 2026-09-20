@@ -1,0 +1,64 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.mypy_cache/
+.pyright/
+.ruff_cache/
+
+# Virtual environments and local Python versions
+.venv/
+venv/
+env/
+ENV/
+.conda/
+
+# Packaging and build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+wheelhouse/
+
+# Test, coverage, and profiling output
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+nosetests.xml
+*.prof
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local
+
+# Harness runtime data and logs
+*.log
+logs/
+compactions.log
+harness_history
+.harness/
+
+# Editors and operating-system files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
