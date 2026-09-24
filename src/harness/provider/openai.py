@@ -27,7 +27,7 @@ class OpenAIProvider:
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not self._api_key:
             raise ValueError("OPENAI_API_KEY is required")
-        self._model = model or os.environ.get("HARNESS_MODEL", "gpt-5")
+        self._model = model or os.environ.get("HARNESS_MODEL", "gpt-4o-mini")
         self.system = system
         self.max_tokens = max_tokens
         self.base_url = base_url.rstrip("/")

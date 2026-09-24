@@ -21,19 +21,23 @@ Phase 1 establishes the smallest useful harness:
 Run the application with:
 
 ```sh
-export ANTHROPIC_API_KEY=...
+cp .env.example .env
+# Edit .env and set your provider API key.
 python -m harness
 ```
 
-To use OpenAI instead:
+To use Anthropic instead:
 
 ```sh
-export HARNESS_PROVIDER=openai
-export OPENAI_API_KEY=...
+export HARNESS_PROVIDER=anthropic
 python -m harness
 ```
 
-The OpenAI provider defaults to `gpt-5`. Set `HARNESS_MODEL` to choose a
+The application loads configuration from `.env` automatically. `.env` is
+ignored by git, so keep provider credentials there and never commit them.
+Use `OPENAI_API_KEY` for OpenAI or `ANTHROPIC_API_KEY` for Anthropic.
+
+The OpenAI provider defaults to `gpt-4o-mini`. Set `HARNESS_MODEL` to choose a
 different model. Its configurable `base_url` also makes it suitable for
 OpenAI-compatible local servers when constructed directly in Python.
 

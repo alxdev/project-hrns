@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from harness.agent import Agent
 from harness.permissions import AlwaysAsk
 from harness.provider import AnthropicProvider, OpenAIProvider
@@ -15,10 +17,11 @@ from harness.ui import TerminalUI
 
 
 async def main() -> None:
+    load_dotenv()
     ui = TerminalUI()
     registry = ToolRegistry([ReadFileTool(), WriteFileTool(), BashTool()])
     working_directory = Path(os.environ.get("HARNESS_WORKING_DIR", Path.cwd())).resolve()
-    provider_name = os.environ.get("HARNESS_PROVIDER", "anthropic").lower()
+    provider_name = os.environ.get("HARNESS_PROVIDER", "openai").lower()
     if provider_name == "openai":
         provider = OpenAIProvider()
     elif provider_name == "anthropic":
