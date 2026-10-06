@@ -4,7 +4,7 @@ The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
 changing the agent loop.
 
-## Current status: Phase 1
+## Current status: Phase 2
 
 Phase 1 establishes the smallest useful harness:
 
@@ -17,6 +17,15 @@ Phase 1 establishes the smallest useful harness:
 - Approval before every tool call
 - A plain terminal runner
 - Tests for the agent loop, tool registry, and permission behavior
+
+Phase 2 adds an independent interactive-shell layer:
+
+- Rich Markdown and panel rendering
+- Rich status spinner while the provider is working
+- A modular slash-command registry
+- `/help`, `/model`, `/clear`, `/tools`, `/exit`, and `/quit`
+
+The agent loop and existing provider/tool implementations remain unchanged.
 
 Run the application with:
 
@@ -75,10 +84,8 @@ boundary, tools, approval gate, terminal runner, and test seam.
 
 ### Phase 2 — Interactive shell
 
-- Rich output and Markdown rendering
-- Better progress feedback
-- Slash commands such as `/help`, `/model`, `/clear`, and `/tools`
-- More explicit configuration
+Completed. The Rich frontend and command registry are separate modules. The
+basic terminal frontend remains available as a simpler UI implementation.
 
 ### Phase 3 — Conversation management
 
