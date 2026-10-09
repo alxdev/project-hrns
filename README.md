@@ -33,6 +33,10 @@ Phase 3 adds an independent conversation-compaction package:
 - Optional JSONL compaction logging
 - `/compact [none|sliding|summarize]`
 - `/verbose [on|off]`
+- `/status` to display the current runtime configuration
+
+At startup, the terminal UI displays the active provider, model, working
+directory, compaction strategy, registered tools, and approval behavior.
 
 The agent loop and existing provider/tool implementations remain unchanged.
 

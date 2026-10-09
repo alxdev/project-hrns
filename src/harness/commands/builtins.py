@@ -6,6 +6,7 @@ from harness.commands.registry import CommandContext, CommandRegistry, CommandRe
 def build_default_commands() -> CommandRegistry:
     registry = CommandRegistry()
     registry.register("help", "Show available commands.", _help)
+    registry.register("status", "Show current runtime configuration.", _status)
     registry.register("model", "Show or change the current model.", _model, "/model [name]")
     registry.register("clear", "Clear the conversation history.", _clear)
     registry.register("tools", "List registered tools.", _tools)
@@ -33,6 +34,12 @@ def _model(args: str, context: CommandContext) -> CommandResult:
     return CommandResult(f"model: {context.provider.model}")
 
 
+def _status(_args: str, context: CommandContext) -> CommandResult:
+    if context.runtime_info is None:
+        return CommandResult("runtime configuration unavailable")
+    return CommandResult(context.runtime_info())
+
+
 def _clear(_args: str, context: CommandContext) -> CommandResult:
     context.agent.messages.clear()
     return CommandResult("conversation cleared")
@@ -53,9 +60,15 @@ def _compact(args: str, context: CommandContext) -> CommandResult:
     async def action() -> str:
         updated, report = await context.compaction.run(context.agent.messages, mode)
         context.agent.messages = updated
-        if not context.compaction.verbose:
-            return "compaction complete"
-        return f"compaction: {report.before_count} messages -> {report.after_count} messages"
+        selection = "active strategy" if mode is None else "one-time strategy"
+        status = "history changed" if report.changed else "history unchanged"
+        return (
+            "compaction\n"
+            f"  strategy: {report.strategy}\n"
+            f"  selection: {selection}\n"
+            f"  messages: {report.before_count} -> {report.after_count}\n"
+            f"  status: {status}"
+        )
 
     return CommandResult(action=action)
 

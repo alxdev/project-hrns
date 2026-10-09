@@ -11,6 +11,7 @@ class CommandContext:
     tools: Any
     commands: "CommandRegistry | None" = None
     compaction: Any = None
+    runtime_info: Callable[[], str] | None = None
 
 
 @dataclass(frozen=True)

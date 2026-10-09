@@ -14,6 +14,7 @@ def context():
         provider=MockProvider(model="initial-model"),
         tools=ToolRegistry(),
         commands=build_default_commands(),
+        runtime_info=lambda: "runtime details",
     )
 
 
@@ -39,3 +40,12 @@ def test_model_and_clear_commands_mutate_only_their_context():
     assert command_context.provider.model == "changed-model"
     assert clear_result.text == "conversation cleared"
     assert command_context.agent.messages == []
+
+
+def test_status_displays_shared_runtime_configuration():
+    commands = build_default_commands()
+    command_context = context()
+
+    result = commands.dispatch("/status", command_context)
+
+    assert result.text == "runtime details"

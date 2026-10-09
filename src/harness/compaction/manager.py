@@ -11,6 +11,7 @@ from .strategies import CompactionStrategy, NoCompaction, SlidingWindow, Summari
 
 @dataclass(frozen=True)
 class CompactionReport:
+    strategy: str
     before_count: int
     after_count: int
 
@@ -42,10 +43,23 @@ class CompactionManager:
         strategy = self._strategy_for(mode) if mode else self.strategy
         before_count = len(messages)
         result = await strategy.compact(messages)
-        return result, CompactionReport(before_count, len(result))
+        return result, CompactionReport(self._strategy_name(strategy), before_count, len(result))
 
     def set_mode(self, mode: str) -> None:
         self.strategy = self._strategy_for(mode)
+
+    @property
+    def strategy_name(self) -> str:
+        return self._strategy_name(self.strategy)
+
+    @staticmethod
+    def _strategy_name(strategy: CompactionStrategy) -> str:
+        name = type(strategy).__name__
+        return {
+            "NoCompaction": "none",
+            "SlidingWindow": "sliding",
+            "Summarize": "summarize",
+        }.get(name, name)
 
     def _strategy_for(self, mode: str) -> CompactionStrategy:
         normalized = mode.lower()
@@ -56,4 +70,3 @@ class CompactionManager:
         if normalized == "summarize":
             return Summarize(self.provider, self.summarize_threshold, self.summarize_keep_recent)
         raise ValueError(f"unknown compaction strategy: {mode}")
-
