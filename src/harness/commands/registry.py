@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 
 @dataclass(frozen=True)
@@ -10,12 +10,14 @@ class CommandContext:
     provider: Any
     tools: Any
     commands: "CommandRegistry | None" = None
+    compaction: Any = None
 
 
 @dataclass(frozen=True)
 class CommandResult:
     text: str = ""
     should_exit: bool = False
+    action: Callable[[], Awaitable[str]] | None = None
 
 
 CommandHandler = Callable[[str, CommandContext], CommandResult]

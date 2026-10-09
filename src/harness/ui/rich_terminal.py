@@ -57,6 +57,10 @@ class RichTerminalUI(TerminalUI):
             if command is not None:
                 if command.text:
                     self.console.print(command.text, markup=False)
+                if command.action is not None:
+                    result = await command.action()
+                    if result:
+                        self.console.print(result, markup=False)
                 if command.should_exit:
                     return
                 continue
@@ -66,4 +70,3 @@ class RichTerminalUI(TerminalUI):
                     await agent.send(prompt)
             except Exception as exc:
                 self.console.print(f"[red]error:[/red] {exc}", file=sys.stderr)
-

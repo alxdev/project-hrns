@@ -4,7 +4,7 @@ The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
 changing the agent loop.
 
-## Current status: Phase 2
+## Current status: Phase 3
 
 Phase 1 establishes the smallest useful harness:
 
@@ -24,6 +24,15 @@ Phase 2 adds an independent interactive-shell layer:
 - Rich status spinner while the provider is working
 - A modular slash-command registry
 - `/help`, `/model`, `/clear`, `/tools`, `/exit`, and `/quit`
+
+Phase 3 adds an independent conversation-compaction package:
+
+- No-op, sliding-window, and model-summarization strategies
+- Safe split points that preserve tool-call/result pairs
+- A compaction manager and reports
+- Optional JSONL compaction logging
+- `/compact [none|sliding|summarize]`
+- `/verbose [on|off]`
 
 The agent loop and existing provider/tool implementations remain unchanged.
 
@@ -89,9 +98,8 @@ basic terminal frontend remains available as a simpler UI implementation.
 
 ### Phase 3 — Conversation management
 
-- Pluggable compaction strategies
-- Safe history boundaries around tool calls
-- Summarization and compaction logging
+Completed. The implementation lives in `src/harness/compaction/` and is
+connected to the agent through one optional `CompactionManager` dependency.
 
 ### Phase 4 — Input and package refinement
 

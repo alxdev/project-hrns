@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from harness.agent import Agent
 from harness.commands import CommandContext, build_default_commands
+from harness.compaction import CompactionManager
 from harness.permissions import AlwaysAsk
 from harness.provider import AnthropicProvider, OpenAIProvider
 from harness.tools.base import ToolContext
@@ -30,12 +31,14 @@ async def main() -> None:
         provider = AnthropicProvider()
     else:
         raise ValueError(f"unsupported HARNESS_PROVIDER: {provider_name}")
+    compaction = CompactionManager(provider)
     agent = Agent(
         provider=provider,
         tools=registry,
         permissions=AlwaysAsk(ui.approve),
         context=ToolContext(working_directory),
         events=ui,
+        compaction=compaction,
     )
     ui.console.print(f"[bold cyan]Python Harness[/bold cyan] · model: {provider.model} · directory: {working_directory}")
     ui.console.print("Type [bold]/help[/bold] to see commands or [bold]/exit[/bold] to quit.")
@@ -44,5 +47,6 @@ async def main() -> None:
         provider=provider,
         tools=registry,
         commands=commands,
+        compaction=compaction,
     )
     await ui.run(agent, commands, command_context)
