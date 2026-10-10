@@ -4,7 +4,7 @@ The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
 changing the agent loop.
 
-## Current status: Phase 3
+## Current status: Phase 4
 
 Phase 1 establishes the smallest useful harness:
 
@@ -37,6 +37,17 @@ Phase 3 adds an independent conversation-compaction package:
 
 At startup, the terminal UI displays the active provider, model, working
 directory, compaction strategy, registered tools, and approval behavior.
+It also shows `Ctrl-C` to cancel the current input and `Ctrl-D` to exit.
+
+Phase 4 adds two execution modes:
+
+- Interactive input through prompt-toolkit with persistent history
+- Non-interactive execution with `--prompt` or `--stdin`
+- Plain-text or JSON output for automated use
+- Explicit command-line and environment configuration
+- Safe non-interactive permissions that deny tool calls by default
+- Separate input, output, and interactive-runner UI components
+- Framework-specific UI code organized under `ui/prompt_toolkit_rich/` and `ui/minimal_tui/`
 
 The agent loop and existing provider/tool implementations remain unchanged.
 
@@ -107,10 +118,22 @@ connected to the agent through one optional `CompactionManager` dependency.
 
 ### Phase 4 — Input and package refinement
 
-- Improved line editing and history
-- Non-interactive execution mode
-- Stronger tool registration and dependency injection
-- Broader automated test coverage
+Completed. The input adapter, output renderer, interactive runner, runtime
+configuration, and non-interactive runner are separate modules. The agent loop
+does not depend on prompt-toolkit or Rich.
+
+Examples:
+
+```sh
+python -m harness --prompt "Summarize this project"
+python -m harness --stdin < task.txt
+python -m harness --prompt "List the files" --output json
+python -m harness --prompt "List the files" --allow-tools
+```
+
+Non-interactive runs deny tools by default. Add `--allow-tools` only when the
+prompt is trusted and tool execution is intended. JSON output reports the
+selected permission mode as `tools_allowed`.
 
 ### Phase 5 — Subagents
 

@@ -23,3 +23,12 @@ class AlwaysAsk:
         approved = await self.ask(tool, arguments)
         return PermissionDecision.ALLOW if approved else PermissionDecision.DENY
 
+
+class AlwaysDeny:
+    async def decide(self, tool: ToolDefinition, arguments: dict[str, Any]) -> PermissionDecision:
+        return PermissionDecision.DENY
+
+
+class AlwaysAllow:
+    async def decide(self, tool: ToolDefinition, arguments: dict[str, Any]) -> PermissionDecision:
+        return PermissionDecision.ALLOW

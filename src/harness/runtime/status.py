@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
-from rich.console import Console
-
 
 def format_runtime_configuration(
     *,
@@ -27,25 +25,26 @@ def format_runtime_configuration(
     )
 
 
-def print_startup_info(
-    console: Console,
+def format_startup_message(
     *,
     provider: str,
     model: str,
     working_directory: Path,
     compaction: str,
     tools: Sequence[str],
-) -> None:
-    """Render the current runtime configuration before the input loop starts."""
-    console.print(
-        f"[bold cyan]Python Harness[/bold cyan] · model: {model} · directory: {working_directory}"
+) -> str:
+    return "\n".join(
+        [
+            f"Python Harness · model: {model} · directory: {working_directory}",
+            format_runtime_configuration(
+                provider=provider,
+                model=model,
+                working_directory=working_directory,
+                compaction=compaction,
+                tools=tools,
+            ),
+            "Type /help to see commands or /exit to quit.",
+            "Shortcuts: Ctrl-C cancel input · Ctrl-D exit.",
+        ]
     )
-    configuration = format_runtime_configuration(
-        provider=provider,
-        model=model,
-        working_directory=working_directory,
-        compaction=compaction,
-        tools=tools,
-    )
-    console.print(configuration, style="dim")
-    console.print("Type [bold]/help[/bold] to see commands or [bold]/exit[/bold] to quit.")
+

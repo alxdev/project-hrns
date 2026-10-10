@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from typing import Any
@@ -9,6 +10,8 @@ from harness.api.types import ToolDefinition
 
 
 class TerminalUI:
+    """The original minimal input/output terminal adapter."""
+
     async def emit(self, event: object) -> None:
         if isinstance(event, TextEvent):
             print(event.text)
@@ -19,25 +22,28 @@ class TerminalUI:
             print(f"{prefix} {event.result.content}")
 
     async def approve(self, tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
-        answer = await __import__("asyncio").to_thread(
+        answer = await asyncio.to_thread(
             input,
             f"Approve {tool.name} {json.dumps(arguments, sort_keys=True)}? [y/N] ",
         )
         return answer.strip().lower() in {"y", "yes"}
 
-    async def run(self, agent) -> None:
-        while True:
-            try:
-                prompt = await __import__("asyncio").to_thread(input, "❯ ")
-            except EOFError:
-                print()
-                return
-            if prompt.strip().lower() in {"/exit", "/quit"}:
-                return
-            if not prompt.strip():
-                continue
-            try:
-                await agent.send(prompt)
-            except Exception as exc:
-                print(f"[error] {exc}", file=sys.stderr)
+    async def read(self) -> str:
+        return await asyncio.to_thread(input, "❯ ")
+
+    def write(self, text: str) -> None:
+        print(text)
+
+    def error(self, text: str) -> None:
+        print(f"[error] {text}", file=sys.stderr)
+
+    class _Thinking:
+        async def __aenter__(self):
+            return None
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    def thinking(self):
+        return self._Thinking()
 
