@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -9,7 +10,7 @@ class CommandContext:
     agent: Any
     provider: Any
     tools: Any
-    commands: "CommandRegistry | None" = None
+    commands: CommandRegistry | None = None
     compaction: Any = None
     runtime_info: Callable[[], str] | None = None
 

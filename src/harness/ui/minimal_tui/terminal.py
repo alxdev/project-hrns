@@ -38,12 +38,11 @@ class TerminalUI:
         print(f"[error] {text}", file=sys.stderr)
 
     class _Thinking:
-        async def __aenter__(self):
+        async def __aenter__(self) -> None:
             return None
 
-        async def __aexit__(self, exc_type, exc, traceback):
+        async def __aexit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool:
             return False
 
-    def thinking(self):
+    def thinking(self) -> _Thinking:
         return self._Thinking()
-

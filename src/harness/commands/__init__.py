@@ -7,4 +7,3 @@ __all__ = [
     "CommandResult",
     "build_default_commands",
 ]
-

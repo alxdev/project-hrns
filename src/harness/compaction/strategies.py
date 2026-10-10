@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Protocol
 
-from harness.api.types import Message, ProviderResponse, TextBlock, ToolCall, ToolResult, UserMessage
+from harness.api.types import (
+    Message,
+    ProviderResponse,
+    TextBlock,
+    ToolCall,
+    ToolResult,
+    UserMessage,
+)
 from harness.provider.base import Provider
 
 
@@ -64,7 +72,9 @@ class Summarize:
         recent_messages = list(messages[split:])
         prompt = f"{self.instructions}\n\nConversation:\n{render_transcript(old_messages)}"
         response: ProviderResponse = await self.provider.send([UserMessage(prompt)], [])
-        summary = "\n".join(block.text for block in response.content if isinstance(block, TextBlock)).strip()
+        summary = "\n".join(
+            block.text for block in response.content if isinstance(block, TextBlock)
+        ).strip()
         if not summary:
             raise RuntimeError("summarization provider returned no text")
         return [UserMessage(f"[Earlier conversation summary]\n{summary}"), *recent_messages]
@@ -99,7 +109,9 @@ def render_transcript(messages: Sequence[Message]) -> str:
             if isinstance(block, TextBlock):
                 blocks.append(block.text)
             elif isinstance(block, ToolCall):
-                blocks.append(f"[tool call: {block.name}] {json.dumps(block.input, sort_keys=True)}")
+                blocks.append(
+                    f"[tool call: {block.name}] {json.dumps(block.input, sort_keys=True)}"
+                )
             elif isinstance(block, ToolResult):
                 status = "error" if block.is_error else "result"
                 blocks.append(f"[tool {status}: {block.tool_use_id}] {block.content}")
@@ -113,7 +125,16 @@ def message_to_dict(message: Message) -> dict[str, object]:
         if isinstance(block, TextBlock):
             content.append({"type": "text", "text": block.text})
         elif isinstance(block, ToolCall):
-            content.append({"type": "tool_call", "id": block.id, "name": block.name, "input": block.input})
+            content.append(
+                {"type": "tool_call", "id": block.id, "name": block.name, "input": block.input}
+            )
         elif isinstance(block, ToolResult):
-            content.append({"type": "tool_result", "tool_use_id": block.tool_use_id, "content": block.content, "is_error": block.is_error})
+            content.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": block.tool_use_id,
+                    "content": block.content,
+                    "is_error": block.is_error,
+                }
+            )
     return {"role": message.role, "content": content}

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from harness.api.types import (
+    ContentBlock,
     Message,
     ProviderResponse,
     TextBlock,
@@ -60,8 +62,10 @@ class AnthropicProvider:
                 for tool in tools
             ]
 
-        headers = {
-            "x-api-key": self._api_key,
+        api_key = self._api_key
+        assert api_key is not None
+        headers: dict[str, str] = {
+            "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         }
@@ -75,7 +79,7 @@ class AnthropicProvider:
             raise RuntimeError(f"provider request failed ({response.status_code}): {response.text}")
 
         data = response.json()
-        content = []
+        content: list[ContentBlock] = []
         for block in data.get("content", []):
             if block.get("type") == "text":
                 content.append(TextBlock(block.get("text", "")))

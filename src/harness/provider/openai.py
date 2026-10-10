@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any, cast
 
 from harness.api.types import (
     Message,
     ProviderResponse,
+    StopReason,
     TextBlock,
     ToolCall,
     ToolDefinition,
@@ -62,8 +64,10 @@ class OpenAIProvider:
         if tools:
             payload["tools"] = [self._tool_to_wire(tool) for tool in tools]
 
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
+        api_key = self._api_key
+        assert api_key is not None
+        headers: dict[str, str] = {
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
         async with httpx.AsyncClient(timeout=120) as client:
@@ -91,7 +95,9 @@ class OpenAIProvider:
 
                 arguments = json.loads(raw_arguments)
             except (TypeError, ValueError) as exc:
-                raise RuntimeError(f"invalid tool arguments for {function.get('name')}: {exc}") from exc
+                raise RuntimeError(
+                    f"invalid tool arguments for {function.get('name')}: {exc}"
+                ) from exc
             if not isinstance(arguments, dict):
                 raise RuntimeError(f"tool arguments for {function.get('name')} must be an object")
             content.append(
@@ -109,7 +115,10 @@ class OpenAIProvider:
             "function_call": "tool_use",
             "length": "max_tokens",
         }.get(finish_reason, "unknown")
-        return ProviderResponse(content=content, stop_reason=stop_reason)
+        return ProviderResponse(
+            content=content,
+            stop_reason=cast("StopReason", stop_reason),
+        )
 
     @staticmethod
     def _tool_to_wire(tool: ToolDefinition) -> dict[str, Any]:

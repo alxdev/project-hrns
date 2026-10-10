@@ -1,7 +1,13 @@
 from pathlib import Path
 
 from harness.api.types import Message, ProviderResponse, TextBlock, ToolCall, ToolResult
-from harness.compaction import CompactionManager, LoggingCompaction, SlidingWindow, Summarize, safe_split_point
+from harness.compaction import (
+    CompactionManager,
+    LoggingCompaction,
+    SlidingWindow,
+    Summarize,
+    safe_split_point,
+)
 from harness.provider import MockProvider
 
 

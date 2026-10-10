@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import sys
-
+from harness.agent.loop import Agent
 from harness.commands.registry import CommandContext, CommandRegistry
 from harness.ui.protocols import InputAdapter, OutputRenderer
 
@@ -13,7 +12,9 @@ class InteractiveRunner:
         self.input = input_adapter
         self.output = output
 
-    async def run(self, agent, commands: CommandRegistry, command_context: CommandContext) -> None:
+    async def run(
+        self, agent: Agent, commands: CommandRegistry, command_context: CommandContext
+    ) -> None:
         while True:
             try:
                 prompt = await self.input.read()
@@ -46,4 +47,3 @@ class InteractiveRunner:
                 self.output.write("operation interrupted")
             except Exception as exc:
                 self.output.error(str(exc))
-

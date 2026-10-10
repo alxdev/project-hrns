@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from .input import PromptToolkitInput
 from .output import RichOutput
 
@@ -10,5 +12,7 @@ __all__ = [
 ]
 
 
-def create_ui(history_file=None):
+def create_ui(history_file: Path | None = None) -> tuple[PromptToolkitInput, RichOutput]:
+    if history_file is None:
+        history_file = Path("~/.python_harness_history").expanduser()
     return PromptToolkitInput(history_file), RichOutput()

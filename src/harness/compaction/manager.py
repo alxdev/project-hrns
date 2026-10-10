@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from harness.api.types import Message
 from harness.provider.base import Provider
@@ -39,7 +39,9 @@ class CompactionManager:
     async def compact(self, messages: Sequence[Message]) -> list[Message]:
         return await self.strategy.compact(messages)
 
-    async def run(self, messages: Sequence[Message], mode: str | None = None) -> tuple[list[Message], CompactionReport]:
+    async def run(
+        self, messages: Sequence[Message], mode: str | None = None
+    ) -> tuple[list[Message], CompactionReport]:
         strategy = self._strategy_for(mode) if mode else self.strategy
         before_count = len(messages)
         result = await strategy.compact(messages)

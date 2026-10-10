@@ -58,4 +58,3 @@ async def test_denied_tool_is_returned_as_error_result(tmp_path):
     denied = provider.calls[1][0][-1].content[0]
     assert denied.is_error is True
     assert denied.content == "user denied this tool call"
-

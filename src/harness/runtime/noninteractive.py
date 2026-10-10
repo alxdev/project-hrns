@@ -36,4 +36,3 @@ async def run_once(
     else:
         print(answer)
     return 0
-

@@ -29,4 +29,3 @@ class WriteFileTool:
             return ToolResult("", f"wrote {path}")
         except Exception as exc:
             return ToolResult("", str(exc), is_error=True)
-

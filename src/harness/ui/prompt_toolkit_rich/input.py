@@ -15,7 +15,7 @@ class PromptToolkitInput:
     """Input adapter implemented with prompt-toolkit."""
 
     def __init__(self, history_file: Path) -> None:
-        self.session = PromptSession(
+        self.session: Any = PromptSession(
             history=FileHistory(str(history_file)),
             enable_history_search=True,
         )
@@ -29,4 +29,3 @@ class PromptToolkitInput:
         with patch_stdout():
             answer = await self.session.prompt_async(prompt)
         return answer.strip().lower() in {"y", "yes"}
-

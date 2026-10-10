@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypeAlias
 
@@ -32,15 +33,15 @@ ContentBlock: TypeAlias = TextBlock | ToolCall | ToolResult
 @dataclass(frozen=True)
 class Message:
     role: Role
-    content: list[ContentBlock] = field(default_factory=list)
+    content: Sequence[ContentBlock] = field(default_factory=list)
 
 
 def UserMessage(text: str) -> Message:
     return Message(role="user", content=[TextBlock(text)])
 
 
-def AssistantMessage(content: list[ContentBlock]) -> Message:
-    return Message(role="assistant", content=content)
+def AssistantMessage(content: Sequence[ContentBlock]) -> Message:
+    return Message(role="assistant", content=list(content))
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,5 @@ class ToolDefinition:
 
 @dataclass(frozen=True)
 class ProviderResponse:
-    content: list[ContentBlock]
+    content: Sequence[ContentBlock]
     stop_reason: StopReason
-

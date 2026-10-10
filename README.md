@@ -4,7 +4,7 @@ The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
 changing the agent loop.
 
-## Current status: Phase 4
+## Current status: Phase 4.5
 
 Phase 1 establishes the smallest useful harness:
 
@@ -50,6 +50,12 @@ Phase 4 adds two execution modes:
 - Framework-specific UI code organized under `ui/prompt_toolkit_rich/` and `ui/minimal_tui/`
 
 The agent loop and existing provider/tool implementations remain unchanged.
+
+Phase 4.5 adds a small development-quality toolchain:
+
+- Ruff for linting, import organization, and formatting checks
+- mypy for static type checking of the application source
+- Configuration for both tools in `pyproject.toml`
 
 Run the application with:
 
@@ -154,8 +160,24 @@ with what was added and how to run it.
 
 ## Development
 
-Run the test suite with:
+Install the development dependencies with:
+
+```sh
+pip install -e '.[dev]'
+```
+
+Run the test suite, lint checks, formatting check, and type check with:
 
 ```sh
 pytest
+ruff check .
+ruff format --check .
+mypy src
+```
+
+Ruff can apply safe formatting and import fixes with:
+
+```sh
+ruff check . --fix
+ruff format .
 ```

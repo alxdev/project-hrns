@@ -31,4 +31,3 @@ class BashTool:
         if process.returncode:
             text = f"{text}\nexit code: {process.returncode}".strip()
         return ToolResult("", text, is_error=process.returncode != 0)
-

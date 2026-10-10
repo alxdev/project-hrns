@@ -1,22 +1,25 @@
 from __future__ import annotations
 
-from enum import Enum
+from collections.abc import Awaitable, Callable
+from enum import StrEnum
 from typing import Any, Protocol
 
 from harness.api.types import ToolDefinition
 
 
-class PermissionDecision(str, Enum):
+class PermissionDecision(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
 
 
 class PermissionPolicy(Protocol):
-    async def decide(self, tool: ToolDefinition, arguments: dict[str, Any]) -> PermissionDecision: ...
+    async def decide(
+        self, tool: ToolDefinition, arguments: dict[str, Any]
+    ) -> PermissionDecision: ...
 
 
 class AlwaysAsk:
-    def __init__(self, ask):
+    def __init__(self, ask: Callable[[ToolDefinition, dict[str, Any]], Awaitable[bool]]) -> None:
         self.ask = ask
 
     async def decide(self, tool: ToolDefinition, arguments: dict[str, Any]) -> PermissionDecision:

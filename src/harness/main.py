@@ -11,16 +11,16 @@ from harness.compaction import CompactionManager
 from harness.config import HarnessConfig, parse_config
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny
 from harness.provider import AnthropicProvider, OpenAIProvider
+from harness.runtime.noninteractive import run_once
+from harness.runtime.status import format_runtime_configuration, format_startup_message
 from harness.tools.base import ToolContext
 from harness.tools.bash import BashTool
 from harness.tools.read_file import ReadFileTool
 from harness.tools.registry import ToolRegistry
 from harness.tools.write_file import WriteFileTool
-from harness.runtime.noninteractive import run_once
-from harness.runtime.status import format_runtime_configuration, format_startup_message
 
 
-def build_provider(config: HarnessConfig):
+def build_provider(config: HarnessConfig) -> OpenAIProvider | AnthropicProvider:
     if config.provider_name == "openai":
         return OpenAIProvider(model=config.model)
     if config.provider_name == "anthropic":

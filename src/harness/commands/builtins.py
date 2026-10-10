@@ -10,8 +10,12 @@ def build_default_commands() -> CommandRegistry:
     registry.register("model", "Show or change the current model.", _model, "/model [name]")
     registry.register("clear", "Clear the conversation history.", _clear)
     registry.register("tools", "List registered tools.", _tools)
-    registry.register("compact", "Compact conversation history.", _compact, "/compact [none|sliding|summarize]")
-    registry.register("verbose", "Show or change compaction reporting.", _verbose, "/verbose [on|off]")
+    registry.register(
+        "compact", "Compact conversation history.", _compact, "/compact [none|sliding|summarize]"
+    )
+    registry.register(
+        "verbose", "Show or change compaction reporting.", _verbose, "/verbose [on|off]"
+    )
     registry.register("exit", "Exit the harness.", _exit)
     registry.register("quit", "Exit the harness.", _exit)
     return registry
@@ -20,7 +24,9 @@ def build_default_commands() -> CommandRegistry:
 def _help(_args: str, context: CommandContext) -> CommandResult:
     if context.commands is None:
         return CommandResult("command registry unavailable")
-    lines = [f"{command.usage:<18} {command.description}" for command in context.commands.commands()]
+    lines = [
+        f"{command.usage:<18} {command.description}" for command in context.commands.commands()
+    ]
     return CommandResult("\n".join(lines))
 
 

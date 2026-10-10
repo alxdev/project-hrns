@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Protocol, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 from harness.api.types import Message, ProviderResponse, ToolDefinition
 
@@ -14,4 +15,3 @@ class Provider(Protocol):
         messages: Sequence[Message],
         tools: Sequence[ToolDefinition],
     ) -> ProviderResponse: ...
-

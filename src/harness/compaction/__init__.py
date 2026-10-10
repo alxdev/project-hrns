@@ -18,4 +18,3 @@ __all__ = [
     "Summarize",
     "safe_split_point",
 ]
-

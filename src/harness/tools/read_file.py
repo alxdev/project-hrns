@@ -24,4 +24,3 @@ class ReadFileTool:
             return ToolResult("", path.read_text(encoding="utf-8"))
         except Exception as exc:
             return ToolResult("", str(exc), is_error=True)
-

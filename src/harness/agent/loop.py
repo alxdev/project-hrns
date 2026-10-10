@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 from harness.api.types import (
     AssistantMessage,
     Message,
-    ProviderResponse,
     TextBlock,
     ToolCall,
-    ToolResult,
     ToolDefinition,
+    ToolResult,
     UserMessage,
 )
 from harness.compaction import CompactionManager
