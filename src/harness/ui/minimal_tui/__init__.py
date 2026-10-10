@@ -1,6 +1,8 @@
 from .terminal import TerminalUI
 
-__all__ = ["TerminalUI", "create_ui"]
+TUI_NAME = "minimal terminal"
+
+__all__ = ["TerminalUI", "TUI_NAME", "create_ui"]
 
 
 def create_ui(history_file=None):

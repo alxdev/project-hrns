@@ -11,6 +11,7 @@ def format_runtime_configuration(
     working_directory: Path,
     compaction: str,
     tools: Sequence[str],
+    tui: str = "not applicable",
 ) -> str:
     return "\n".join(
         [
@@ -19,6 +20,7 @@ def format_runtime_configuration(
             f"  model: {model}",
             f"  directory: {working_directory}",
             f"  compaction: {compaction}",
+            f"  TUI: {tui}",
             f"  tools: {', '.join(tools) if tools else 'none'}",
             "  approval: required before every tool call",
         ]
@@ -32,6 +34,7 @@ def format_startup_message(
     working_directory: Path,
     compaction: str,
     tools: Sequence[str],
+    tui: str = "not applicable",
 ) -> str:
     return "\n".join(
         [
@@ -42,9 +45,9 @@ def format_startup_message(
                 working_directory=working_directory,
                 compaction=compaction,
                 tools=tools,
+                tui=tui,
             ),
             "Type /help to see commands or /exit to quit.",
             "Shortcuts: Ctrl-C cancel input · Ctrl-D exit.",
         ]
     )
-

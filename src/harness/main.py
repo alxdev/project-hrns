@@ -58,7 +58,7 @@ async def main(argv: list[str] | None = None) -> int:
         )
 
     from harness.ui.interactive import InteractiveRunner
-    from harness.ui.prompt_toolkit_rich import create_ui
+    from harness.ui.prompt_toolkit_rich import TUI_NAME, create_ui
 
     input_adapter, output = create_ui(config.history_file)
     agent = Agent(
@@ -76,6 +76,7 @@ async def main(argv: list[str] | None = None) -> int:
             working_directory=config.working_directory,
             compaction=compaction.strategy_name,
             tools=[definition.name for definition in registry.definitions()],
+            tui=TUI_NAME,
         )
     )
     command_context = CommandContext(
@@ -90,6 +91,7 @@ async def main(argv: list[str] | None = None) -> int:
             working_directory=config.working_directory,
             compaction=compaction.strategy_name,
             tools=[definition.name for definition in registry.definitions()],
+            tui=TUI_NAME,
         ),
     )
     await InteractiveRunner(input_adapter, output).run(agent, commands, command_context)
