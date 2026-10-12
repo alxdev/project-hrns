@@ -4,7 +4,7 @@ The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
 changing the agent loop.
 
-## Current status: Phase 4.5
+## Current status: Phase 5
 
 Phase 1 establishes the smallest useful harness:
 
@@ -56,6 +56,14 @@ Phase 4.5 adds a small development-quality toolchain:
 - Ruff for linting, import organization, and formatting checks
 - mypy for static type checking of the application source
 - Configuration for both tools in `pyproject.toml`
+
+Phase 5 adds an independent subagent layer:
+
+- Reusable `explorer` and `coder` agent profiles
+- Curated tool sets for each profile
+- A `delegate_to_agent` tool for focused delegation
+- Active and completed subagent tracking
+- `/subagents` for viewing profiles and delegation activity
 
 Run the application with:
 
@@ -143,10 +151,13 @@ selected permission mode as `tools_allowed`.
 
 ### Phase 5 — Subagents
 
-- Reusable agent instances
-- Curated tool sets
-- Delegation tools
-- Active-subagent tracking
+Completed. The implementation lives in `src/harness/subagents/`. The main
+agent remains unchanged; it receives a delegation tool while each subagent
+gets its own agent instance, conversation history, and curated `ToolRegistry`.
+
+Use `/subagents` interactively to inspect available profiles and delegation
+status. The main agent can delegate through the `delegate_to_agent` tool using
+the `explorer` or `coder` profile.
 
 ### Phase 6 — Full terminal UI
 

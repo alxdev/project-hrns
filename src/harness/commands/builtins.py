@@ -10,6 +10,7 @@ def build_default_commands() -> CommandRegistry:
     registry.register("model", "Show or change the current model.", _model, "/model [name]")
     registry.register("clear", "Clear the conversation history.", _clear)
     registry.register("tools", "List registered tools.", _tools)
+    registry.register("subagents", "Show subagent profiles and activity.", _subagents)
     registry.register(
         "compact", "Compact conversation history.", _compact, "/compact [none|sliding|summarize]"
     )
@@ -54,6 +55,12 @@ def _clear(_args: str, context: CommandContext) -> CommandResult:
 def _tools(_args: str, context: CommandContext) -> CommandResult:
     names = [definition.name for definition in context.tools.definitions()]
     return CommandResult("\n".join(names) if names else "no tools registered")
+
+
+def _subagents(_args: str, context: CommandContext) -> CommandResult:
+    if context.subagents is None:
+        return CommandResult("subagents are unavailable")
+    return CommandResult(context.subagents.describe())
 
 
 def _compact(args: str, context: CommandContext) -> CommandResult:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -13,7 +14,13 @@ from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny
 from harness.provider import AnthropicProvider, OpenAIProvider
 from harness.runtime.noninteractive import run_once
 from harness.runtime.status import format_runtime_configuration, format_startup_message
-from harness.tools.base import ToolContext
+from harness.subagents import (
+    DelegationTool,
+    SubagentManager,
+    SubagentProfile,
+    build_default_profiles,
+)
+from harness.tools.base import Tool, ToolContext
 from harness.tools.bash import BashTool
 from harness.tools.read_file import ReadFileTool
 from harness.tools.registry import ToolRegistry
@@ -31,21 +38,54 @@ def build_provider(config: HarnessConfig) -> OpenAIProvider | AnthropicProvider:
 async def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     config = parse_config(argv)
-    registry = ToolRegistry([ReadFileTool(), WriteFileTool(), BashTool()])
     commands = build_default_commands()
     provider = build_provider(config)
     compaction = CompactionManager(provider)
+    events: Any
+    permissions: Any
+    input_adapter: Any
+
+    if config.non_interactive:
+        events = NullEventSink()
+        permissions = AlwaysAllow() if config.allow_tools else AlwaysDeny()
+        input_adapter = None
+    else:
+        from harness.ui.interactive import InteractiveRunner
+        from harness.ui.prompt_toolkit_rich import TUI_NAME, create_ui
+
+        input_adapter, output = create_ui(config.history_file)
+        events = output
+        permissions = AlwaysAsk(input_adapter.approve)
+
+    base_tools: list[Tool] = [ReadFileTool(), WriteFileTool(), BashTool()]
+    profiles = build_default_profiles(base_tools)
+    delegation = DelegationTool(sorted(profiles))
+    registry = ToolRegistry([*base_tools, delegation])
+    context = ToolContext(config.working_directory)
+
+    def create_subagent(profile: SubagentProfile) -> Agent:
+        return Agent(
+            provider=provider,
+            tools=ToolRegistry(profile.tools),
+            permissions=permissions,
+            context=context,
+            events=events,
+            compaction=compaction,
+        )
+
+    subagents = SubagentManager(create_subagent, profiles)
+    delegation.bind(subagents)
+    agent = Agent(
+        provider=provider,
+        tools=registry,
+        permissions=permissions,
+        context=context,
+        events=events,
+        compaction=compaction,
+    )
 
     if config.non_interactive:
         prompt = config.prompt if config.prompt is not None else sys.stdin.read()
-        agent = Agent(
-            provider=provider,
-            tools=registry,
-            permissions=AlwaysAllow() if config.allow_tools else AlwaysDeny(),
-            context=ToolContext(config.working_directory),
-            events=NullEventSink(),
-            compaction=compaction,
-        )
         return await run_once(
             agent,
             prompt,
@@ -57,18 +97,6 @@ async def main(argv: list[str] | None = None) -> int:
             tools_allowed=config.allow_tools,
         )
 
-    from harness.ui.interactive import InteractiveRunner
-    from harness.ui.prompt_toolkit_rich import TUI_NAME, create_ui
-
-    input_adapter, output = create_ui(config.history_file)
-    agent = Agent(
-        provider=provider,
-        tools=registry,
-        permissions=AlwaysAsk(input_adapter.approve),
-        context=ToolContext(config.working_directory),
-        events=output,
-        compaction=compaction,
-    )
     output.write(
         format_startup_message(
             provider=config.provider_name,
@@ -85,6 +113,7 @@ async def main(argv: list[str] | None = None) -> int:
         tools=registry,
         commands=commands,
         compaction=compaction,
+        subagents=subagents,
         runtime_info=lambda: format_runtime_configuration(
             provider=config.provider_name,
             model=provider.model,
