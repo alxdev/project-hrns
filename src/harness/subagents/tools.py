@@ -9,20 +9,23 @@ from .manager import SubagentManager
 
 
 class DelegationTool:
-    """Tool exposed to an agent for delegating work to a named subagent."""
+    """Tool exposed to the main agent for one named subagent profile."""
 
-    def __init__(self, profiles: list[str]) -> None:
+    def __init__(self, profile: str, description: str) -> None:
+        self.profile = profile
         self._manager: SubagentManager | None = None
         self._definition = ToolDefinition(
-            name="delegate_to_agent",
-            description="Delegate a focused task to a reusable subagent profile.",
+            name=f"delegate_{profile}",
+            description=description,
             input_schema={
                 "type": "object",
                 "properties": {
-                    "profile": {"type": "string", "enum": profiles},
-                    "prompt": {"type": "string"},
+                    "task": {
+                        "type": "string",
+                        "description": "The focused task to investigate or complete.",
+                    }
                 },
-                "required": ["profile", "prompt"],
+                "required": ["task"],
             },
         )
 
@@ -42,8 +45,8 @@ class DelegationTool:
             )
         try:
             record = await self._manager.delegate(
-                str(arguments.get("profile", "")),
-                str(arguments.get("prompt", "")),
+                self.profile,
+                str(arguments.get("task", "")),
             )
         except Exception as exc:
             return ToolResult(self.definition.name, str(exc), is_error=True)

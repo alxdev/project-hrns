@@ -14,12 +14,23 @@ def build_default_profiles(tools: Iterable[Tool]) -> dict[str, SubagentProfile]:
     return {
         "explorer": SubagentProfile(
             name="explorer",
-            description="Inspect files and answer questions without modifying the workspace.",
+            description=(
+                "Investigate the codebase and return a focused answer. "
+                "Prefer this over reading files yourself for read-only questions."
+            ),
             tools=read_only,
+            system_prompt=(
+                "You are an exploration subagent. Investigate the codebase using your "
+                "read-only tools and return a concise, evidence-based answer."
+            ),
         ),
         "coder": SubagentProfile(
             name="coder",
-            description="Inspect and modify files, and run workspace commands.",
+            description="Implement a focused coding task using the available workspace tools.",
             tools=coding,
+            system_prompt=(
+                "You are a coding subagent. Make only the changes needed for the assigned "
+                "task, then summarize what you changed and verified."
+            ),
         ),
     }

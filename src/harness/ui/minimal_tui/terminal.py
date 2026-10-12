@@ -5,7 +5,12 @@ import json
 import sys
 from typing import Any
 
-from harness.agent.loop import TextEvent, ToolCallEvent, ToolResultEvent
+from harness.agent.loop import (
+    SubagentLifecycleEvent,
+    TextEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+)
 from harness.api.types import ToolDefinition
 
 
@@ -16,10 +21,19 @@ class TerminalUI:
         if isinstance(event, TextEvent):
             print(event.text)
         elif isinstance(event, ToolCallEvent):
-            print(f"[tool] {event.name} {json.dumps(event.arguments, sort_keys=True)}")
+            print(
+                f"{event.log_prefix}[tool] {event.name} "
+                f"{json.dumps(event.arguments, sort_keys=True)}"
+            )
         elif isinstance(event, ToolResultEvent):
             prefix = "[tool error]" if event.result.is_error else "[tool result]"
-            print(f"{prefix} {event.result.content}")
+            print(f"{event.log_prefix}{prefix} {event.result.content}")
+        elif isinstance(event, SubagentLifecycleEvent):
+            if event.phase == "started":
+                print(f"↳ delegating to {event.profile} ({event.record_id})")
+            else:
+                elapsed = event.elapsed_seconds or 0
+                print(f"← {event.profile} {event.phase} ({elapsed:.1f}s)")
 
     async def approve(self, tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
         answer = await asyncio.to_thread(

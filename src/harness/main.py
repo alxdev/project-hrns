@@ -59,22 +59,38 @@ async def main(argv: list[str] | None = None) -> int:
 
     base_tools: list[Tool] = [ReadFileTool(), WriteFileTool(), BashTool()]
     profiles = build_default_profiles(base_tools)
-    delegation = DelegationTool(sorted(profiles))
-    registry = ToolRegistry([*base_tools, delegation])
     context = ToolContext(config.working_directory)
 
     def create_subagent(profile: SubagentProfile) -> Agent:
+        subagent_provider = build_provider(config)
+        subagent_provider.system = profile.system_prompt
+        subagent_permissions = {
+            "auto_allow": AlwaysAllow(),
+            "inherit": permissions,
+            "ask": permissions,
+            "deny": AlwaysDeny(),
+        }.get(profile.permission_mode, permissions)
         return Agent(
-            provider=provider,
+            provider=subagent_provider,
             tools=ToolRegistry(profile.tools),
-            permissions=permissions,
+            permissions=subagent_permissions,
             context=context,
             events=events,
             compaction=compaction,
+            max_turns=profile.max_turns,
+            name=profile.name,
+            system_prompt=profile.system_prompt,
+            log_prefix="  ↳ ",
+            quiet=True,
         )
 
-    subagents = SubagentManager(create_subagent, profiles)
-    delegation.bind(subagents)
+    subagents = SubagentManager(create_subagent, profiles, events=events)
+    delegation_tools = [
+        DelegationTool(profile.name, profile.description) for profile in profiles.values()
+    ]
+    for delegation_tool in delegation_tools:
+        delegation_tool.bind(subagents)
+    registry = ToolRegistry([*base_tools, *delegation_tools])
     agent = Agent(
         provider=provider,
         tools=registry,
@@ -82,6 +98,7 @@ async def main(argv: list[str] | None = None) -> int:
         context=context,
         events=events,
         compaction=compaction,
+        name="root",
     )
 
     if config.non_interactive:

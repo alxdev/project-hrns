@@ -46,8 +46,9 @@ async def test_manager_reuses_agent_and_tracks_records():
 
     assert first.status is SubagentStatus.COMPLETED
     assert second.status is SubagentStatus.COMPLETED
-    assert len(created) == 1
-    assert created[0].prompts == ["inspect the project", "inspect the tests"]
+    assert len(created) == 2
+    assert created[0].prompts == ["inspect the project"]
+    assert created[1].prompts == ["inspect the tests"]
     assert manager.active() == []
     assert first.id != second.id
 
@@ -58,12 +59,12 @@ async def test_delegation_tool_returns_subagent_result():
 
     profiles = build_default_profiles([])
     manager = SubagentManager(factory, profiles)
-    tool = DelegationTool(sorted(profiles))
+    tool = DelegationTool("explorer", profiles["explorer"].description)
     tool.bind(manager)
 
     result = await tool.execute(
         ToolContext(Path.cwd()),
-        {"profile": "explorer", "prompt": "find the entry point"},
+        {"task": "find the entry point"},
     )
 
     assert result.is_error is False
@@ -71,17 +72,19 @@ async def test_delegation_tool_returns_subagent_result():
 
 
 def test_delegation_tool_exposes_profile_schema():
-    tool = DelegationTool(["explorer", "coder"])
+    tool = DelegationTool("explorer", "Investigate the codebase.")
 
     assert tool.definition == ToolDefinition(
-        name="delegate_to_agent",
-        description="Delegate a focused task to a reusable subagent profile.",
+        name="delegate_explorer",
+        description="Investigate the codebase.",
         input_schema={
             "type": "object",
             "properties": {
-                "profile": {"type": "string", "enum": ["explorer", "coder"]},
-                "prompt": {"type": "string"},
+                "task": {
+                    "type": "string",
+                    "description": "The focused task to investigate or complete.",
+                },
             },
-            "required": ["profile", "prompt"],
+            "required": ["task"],
         },
     )

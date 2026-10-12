@@ -61,8 +61,9 @@ Phase 5 adds an independent subagent layer:
 
 - Reusable `explorer` and `coder` agent profiles
 - Curated tool sets for each profile
-- A `delegate_to_agent` tool for focused delegation
+- Profile-specific `delegate_explorer` and `delegate_coder` tools
 - Active and completed subagent tracking
+- Isolated agent state, system prompts, permission modes, and lifecycle events
 - `/subagents` for viewing profiles and delegation activity
 
 Run the application with:
@@ -152,12 +153,13 @@ selected permission mode as `tools_allowed`.
 ### Phase 5 — Subagents
 
 Completed. The implementation lives in `src/harness/subagents/`. The main
-agent remains unchanged; it receives a delegation tool while each subagent
-gets its own agent instance, conversation history, and curated `ToolRegistry`.
+agent receives profile-specific delegation tools while each subagent gets its
+own isolated agent instance, system prompt, permission mode, and curated
+`ToolRegistry`.
 
 Use `/subagents` interactively to inspect available profiles and delegation
-status. The main agent can delegate through the `delegate_to_agent` tool using
-the `explorer` or `coder` profile.
+status. The main agent can delegate through `delegate_explorer` or
+`delegate_coder`.
 
 ### Phase 6 — Full terminal UI
 

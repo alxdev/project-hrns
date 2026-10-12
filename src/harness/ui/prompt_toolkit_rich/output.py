@@ -8,7 +8,12 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from harness.agent.loop import TextEvent, ToolCallEvent, ToolResultEvent
+from harness.agent.loop import (
+    SubagentLifecycleEvent,
+    TextEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+)
 
 
 class RichOutput:
@@ -22,18 +27,31 @@ class RichOutput:
             self.console.print(Markdown(event.text))
         elif isinstance(event, ToolCallEvent):
             arguments = json.dumps(event.arguments, indent=2, sort_keys=True)
+            prefix = event.log_prefix
             self.console.print(
-                Panel(arguments, title=f"tool · {event.name}", border_style="yellow")
+                Panel(
+                    arguments,
+                    title=f"{prefix}tool · {event.name}",
+                    border_style="yellow",
+                )
             )
         elif isinstance(event, ToolResultEvent):
             is_error = event.result.is_error
             self.console.print(
                 Panel(
                     event.result.content,
-                    title="tool error" if is_error else "tool result",
+                    title=f"{event.log_prefix}{'tool error' if is_error else 'tool result'}",
                     style="red" if is_error else "dim",
                 )
             )
+        elif isinstance(event, SubagentLifecycleEvent):
+            if event.phase == "started":
+                self.console.print(
+                    f"[dim]↳ delegating to {event.profile} ({event.record_id})[/dim]"
+                )
+            else:
+                elapsed = event.elapsed_seconds or 0
+                self.console.print(f"[dim]← {event.profile} {event.phase} ({elapsed:.1f}s)[/dim]")
 
     def write(self, text: str) -> None:
         self.console.print(text, markup=False)

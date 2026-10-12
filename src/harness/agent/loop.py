@@ -31,18 +31,32 @@ class NullEventSink:
 @dataclass(frozen=True)
 class TextEvent:
     text: str
+    agent: str = ""
+    log_prefix: str = ""
 
 
 @dataclass(frozen=True)
 class ToolCallEvent:
     name: str
     arguments: dict[str, Any]
+    agent: str = ""
+    log_prefix: str = ""
 
 
 @dataclass(frozen=True)
 class ToolResultEvent:
     name: str
     result: ToolResult
+    agent: str = ""
+    log_prefix: str = ""
+
+
+@dataclass(frozen=True)
+class SubagentLifecycleEvent:
+    profile: str
+    record_id: str
+    phase: str
+    elapsed_seconds: float | None = None
 
 
 @dataclass
@@ -55,6 +69,10 @@ class Agent:
     compaction: CompactionManager | None = None
     messages: list[Message] = field(default_factory=list)
     max_turns: int = 20
+    name: str = ""
+    system_prompt: str | None = None
+    log_prefix: str = ""
+    quiet: bool = False
 
     async def send(self, prompt: str) -> str:
         self.messages.append(UserMessage(prompt))
@@ -67,7 +85,8 @@ class Agent:
             text = "".join(block.text for block in response.content if isinstance(block, TextBlock))
             if text:
                 final_text = text
-                await self.events.emit(TextEvent(text))
+                if not self.quiet:
+                    await self.events.emit(TextEvent(text, self.name, self.log_prefix))
 
             calls = [block for block in response.content if isinstance(block, ToolCall)]
             if not calls:
@@ -75,7 +94,9 @@ class Agent:
 
             results: list[ToolResult] = []
             for call in calls:
-                await self.events.emit(ToolCallEvent(call.name, call.input))
+                await self.events.emit(
+                    ToolCallEvent(call.name, call.input, self.name, self.log_prefix)
+                )
                 definition = next(
                     (item for item in self.tools.definitions() if item.name == call.name),
                     ToolDefinition(call.name, "", {"type": "object"}),
@@ -87,6 +108,8 @@ class Agent:
                     result = await self.tools.execute(self.context, call.name, call.input)
                     result = ToolResult(call.id, result.content, result.is_error)
                 results.append(result)
-                await self.events.emit(ToolResultEvent(call.name, result))
+                await self.events.emit(
+                    ToolResultEvent(call.name, result, self.name, self.log_prefix)
+                )
             self.messages.append(Message(role="user", content=results))
         raise RuntimeError(f"agent exceeded maximum turns ({self.max_turns})")
