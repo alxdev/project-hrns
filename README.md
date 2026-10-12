@@ -175,6 +175,15 @@ ruff format --check .
 mypy src
 ```
 
+The same checks can be run together through the `Makefile`:
+
+```sh
+make check
+```
+
+Individual targets are also available: `make test`, `make lint`,
+`make format-check`, `make format`, and `make type-check`.
+
 Ruff can apply safe formatting and import fixes with:
 
 ```sh
