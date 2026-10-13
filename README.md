@@ -71,6 +71,8 @@ The root agent uses strict delegation. Its tool registry contains only
 `read_file`, `write_file`, or `bash` tools. The `explorer` subagent handles
 read-only inspection, while the `coder` subagent handles file changes and shell
 commands. This keeps planning/routing separate from workspace execution.
+Delegation itself is automatically allowed; approval is reserved for the
+subagent's actual file and shell operations.
 
 Run the application with:
 

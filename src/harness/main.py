@@ -44,11 +44,13 @@ async def main(argv: list[str] | None = None) -> int:
     compaction = CompactionManager(provider)
     events: Any
     permissions: Any
+    root_permissions: Any
     input_adapter: Any
 
     if config.non_interactive:
         events = NullEventSink()
         permissions = AlwaysAllow() if config.allow_tools else AlwaysDeny()
+        root_permissions = AlwaysAllow()
         input_adapter = None
     else:
         from harness.ui.interactive import InteractiveRunner
@@ -62,6 +64,9 @@ async def main(argv: list[str] | None = None) -> int:
                 return await input_adapter.approve(tool, arguments)
 
         permissions = AlwaysAsk(approve_tool)
+        # Delegation is routing, not workspace execution. The subagent's
+        # inherited policy still gates the actual read/write/shell operation.
+        root_permissions = AlwaysAllow()
 
     base_tools: list[Tool] = [ReadFileTool(), WriteFileTool(), BashTool()]
     profiles = build_default_profiles(base_tools)
@@ -102,7 +107,7 @@ async def main(argv: list[str] | None = None) -> int:
     agent = Agent(
         provider=provider,
         tools=registry,
-        permissions=permissions,
+        permissions=root_permissions,
         context=context,
         events=events,
         compaction=compaction,
