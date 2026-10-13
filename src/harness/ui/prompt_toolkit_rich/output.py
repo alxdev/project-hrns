@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.status import Status
 
 from harness.agent.loop import (
     SubagentLifecycleEvent,
@@ -21,6 +22,7 @@ class RichOutput:
 
     def __init__(self, console: Console | None = None) -> None:
         self.console = console or Console()
+        self._status: Status | None = None
 
     async def emit(self, event: object) -> None:
         if isinstance(event, TextEvent):
@@ -61,5 +63,19 @@ class RichOutput:
 
     @asynccontextmanager
     async def thinking(self) -> AsyncIterator[None]:
-        with self.console.status("Thinking...", spinner="dots"):
+        status = self.console.status("Thinking...", spinner="dots")
+        self._status = status
+        with status:
             yield
+        self._status = None
+
+    @contextmanager
+    def suspend(self) -> Iterator[None]:
+        status = self._status
+        if status is not None:
+            status.stop()
+        try:
+            yield
+        finally:
+            if status is not None:
+                status.start()

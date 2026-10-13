@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from typing import Any, Protocol
 
 from harness.api.types import ToolDefinition
@@ -20,3 +20,5 @@ class OutputRenderer(Protocol):
     def error(self, text: str) -> None: ...
 
     def thinking(self) -> AbstractAsyncContextManager[None]: ...
+
+    def suspend(self) -> AbstractContextManager[None]: ...

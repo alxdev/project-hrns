@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from harness.agent import Agent
 from harness.agent.loop import NullEventSink
+from harness.api.types import ToolDefinition
 from harness.commands import CommandContext, build_default_commands
 from harness.compaction import CompactionManager
 from harness.config import HarnessConfig, parse_config
@@ -55,7 +56,12 @@ async def main(argv: list[str] | None = None) -> int:
 
         input_adapter, output = create_ui(config.history_file)
         events = output
-        permissions = AlwaysAsk(input_adapter.approve)
+
+        async def approve_tool(tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
+            with output.suspend():
+                return await input_adapter.approve(tool, arguments)
+
+        permissions = AlwaysAsk(approve_tool)
 
     base_tools: list[Tool] = [ReadFileTool(), WriteFileTool(), BashTool()]
     profiles = build_default_profiles(base_tools)

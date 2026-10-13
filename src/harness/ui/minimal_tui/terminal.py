@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from harness.agent.loop import (
@@ -60,3 +62,7 @@ class TerminalUI:
 
     def thinking(self) -> _Thinking:
         return self._Thinking()
+
+    @contextmanager
+    def suspend(self) -> Iterator[None]:
+        yield
