@@ -26,6 +26,7 @@ def test_profiles_have_curated_tools():
     profiles = build_default_profiles([ReadFileTool(), WriteFileTool(), BashTool()])
 
     assert [tool.definition.name for tool in profiles["explorer"].tools] == ["read_file"]
+    assert profiles["explorer"].permission_mode == "inherit"
     assert profiles["coder"].permission_mode == "inherit"
     assert {tool.definition.name for tool in profiles["coder"].tools} == {
         "read_file",

@@ -23,6 +23,7 @@ def build_default_profiles(tools: Iterable[Tool]) -> dict[str, SubagentProfile]:
                 "You are an exploration subagent. Investigate the codebase using your "
                 "read-only tools and return a concise, evidence-based answer."
             ),
+            permission_mode="inherit",
         ),
         "coder": SubagentProfile(
             name="coder",
