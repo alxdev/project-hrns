@@ -66,6 +66,12 @@ Phase 5 adds an independent subagent layer:
 - Isolated agent state, system prompts, permission modes, and lifecycle events
 - `/subagents` for viewing profiles and delegation activity
 
+The root agent uses strict delegation. Its tool registry contains only
+`delegate_explorer` and `delegate_coder`; it does not receive the base
+`read_file`, `write_file`, or `bash` tools. The `explorer` subagent handles
+read-only inspection, while the `coder` subagent handles file changes and shell
+commands. This keeps planning/routing separate from workspace execution.
+
 Run the application with:
 
 ```sh
@@ -153,7 +159,7 @@ selected permission mode as `tools_allowed`.
 ### Phase 5 — Subagents
 
 Completed. The implementation lives in `src/harness/subagents/`. The main
-agent receives profile-specific delegation tools while each subagent gets its
+agent receives only profile-specific delegation tools while each subagent gets its
 own isolated agent instance, system prompt, permission mode, and curated
 `ToolRegistry`.
 

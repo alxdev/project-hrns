@@ -8,6 +8,7 @@ from harness.subagents import (
     build_default_profiles,
 )
 from harness.tools.base import ToolContext
+from harness.tools.bash import BashTool
 from harness.tools.read_file import ReadFileTool
 from harness.tools.write_file import WriteFileTool
 
@@ -22,12 +23,13 @@ class FakeAgent:
 
 
 def test_profiles_have_curated_tools():
-    profiles = build_default_profiles([ReadFileTool(), WriteFileTool()])
+    profiles = build_default_profiles([ReadFileTool(), WriteFileTool(), BashTool()])
 
     assert [tool.definition.name for tool in profiles["explorer"].tools] == ["read_file"]
     assert {tool.definition.name for tool in profiles["coder"].tools} == {
         "read_file",
         "write_file",
+        "bash",
     }
 
 

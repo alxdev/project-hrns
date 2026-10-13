@@ -96,7 +96,9 @@ async def main(argv: list[str] | None = None) -> int:
     ]
     for delegation_tool in delegation_tools:
         delegation_tool.bind(subagents)
-    registry = ToolRegistry([*base_tools, *delegation_tools])
+    # Keep the root agent as a strict planner/router. Workspace inspection,
+    # file writes, and shell execution are available only through subagents.
+    registry = ToolRegistry(delegation_tools)
     agent = Agent(
         provider=provider,
         tools=registry,

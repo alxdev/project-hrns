@@ -36,3 +36,15 @@ different UIs to show or ignore start, completion, and elapsed-time messages.
 
 `SubagentManager.describe()` reports configured profiles, active work, and the
 latest delegation records. The interactive `/subagents` command displays it.
+
+## Tool ownership
+
+The root agent is intentionally restricted to delegation tools. It cannot call
+`read_file`, `write_file`, or `bash` directly. This enforces a strict planner /
+executor boundary:
+
+- `explorer` may use `read_file` for read-only investigation.
+- `coder` may use `read_file`, `write_file`, and `bash` for implementation work.
+
+Consequently, file changes and shell commands must be performed by the `coder`
+subagent, even when the task is initiated interactively by the root agent.
