@@ -46,5 +46,10 @@ executor boundary:
 - `explorer` may use `read_file` for read-only investigation.
 - `coder` may use `read_file`, `write_file`, and `bash` for implementation work.
 
+The `coder` profile inherits the root permission policy. In interactive mode,
+this means the actual file operation or shell command is displayed and must be
+approved before it runs. In non-interactive mode, it follows the same
+`--allow-tools` setting as the root agent.
+
 Consequently, file changes and shell commands must be performed by the `coder`
 subagent, even when the task is initiated interactively by the root agent.

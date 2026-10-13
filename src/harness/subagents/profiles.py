@@ -32,5 +32,6 @@ def build_default_profiles(tools: Iterable[Tool]) -> dict[str, SubagentProfile]:
                 "You are a coding subagent. Make only the changes needed for the assigned "
                 "task, then summarize what you changed and verified."
             ),
+            permission_mode="inherit",
         ),
     }
