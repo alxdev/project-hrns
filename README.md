@@ -171,7 +171,8 @@ status. The main agent can delegate through `delegate_explorer` or
 
 ### Phase 6 — Full terminal UI
 
-- Structured event-driven transcript rendering
+- 6.1 completed: framework-neutral transcript state reduced from agent events
+- Structured event-driven transcript rendering from that state
 - Scrollback and streaming output
 - Approval dialogs
 - Cancellation and live status indicators

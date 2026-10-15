@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from harness.agent.loop import Agent, NullEventSink
+from harness.agent.loop import Agent
 
 
 async def run_once(
@@ -17,7 +17,6 @@ async def run_once(
     compaction: str,
     tools_allowed: bool,
 ) -> int:
-    agent.events = NullEventSink()
     answer = await agent.send(prompt)
     if output == "json":
         print(

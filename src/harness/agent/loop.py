@@ -29,10 +29,28 @@ class NullEventSink:
 
 
 @dataclass(frozen=True)
+class UserMessageEvent:
+    text: str
+    agent: str = ""
+
+
+@dataclass(frozen=True)
 class TextEvent:
     text: str
     agent: str = ""
     log_prefix: str = ""
+
+
+@dataclass(frozen=True)
+class TextDeltaEvent:
+    text: str
+    agent: str = ""
+    log_prefix: str = ""
+
+
+@dataclass(frozen=True)
+class TextStreamCompletedEvent:
+    agent: str = ""
 
 
 @dataclass(frozen=True)
@@ -41,6 +59,7 @@ class ToolCallEvent:
     arguments: dict[str, Any]
     agent: str = ""
     log_prefix: str = ""
+    tool_call_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -76,6 +95,7 @@ class Agent:
 
     async def send(self, prompt: str) -> str:
         self.messages.append(UserMessage(prompt))
+        await self.events.emit(UserMessageEvent(prompt, self.name))
         final_text = ""
         for _ in range(self.max_turns):
             if self.compaction is not None:
@@ -95,7 +115,13 @@ class Agent:
             results: list[ToolResult] = []
             for call in calls:
                 await self.events.emit(
-                    ToolCallEvent(call.name, call.input, self.name, self.log_prefix)
+                    ToolCallEvent(
+                        call.name,
+                        call.input,
+                        self.name,
+                        self.log_prefix,
+                        call.id,
+                    )
                 )
                 definition = next(
                     (item for item in self.tools.definitions() if item.name == call.name),

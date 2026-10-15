@@ -49,6 +49,8 @@ def _status(_args: str, context: CommandContext) -> CommandResult:
 
 def _clear(_args: str, context: CommandContext) -> CommandResult:
     context.agent.messages.clear()
+    if context.transcript is not None:
+        context.transcript.clear()
     return CommandResult("conversation cleared")
 
 

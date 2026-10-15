@@ -13,6 +13,7 @@ class CommandContext:
     commands: CommandRegistry | None = None
     compaction: Any = None
     subagents: Any = None
+    transcript: Any = None
     runtime_info: Callable[[], str] | None = None
 
 

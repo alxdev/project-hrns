@@ -1,9 +1,12 @@
 # UI Architecture
 
-The top-level `ui` package contains only framework-neutral pieces:
+The `ui` package contains framework-neutral UI boundaries:
 
 - `protocols.py` — `InputAdapter` and `OutputRenderer`
 - `interactive.py` — `InteractiveRunner`
+
+The shared `harness.transcript` module reduces agent events into framework-neutral
+transcript state.
 
 Framework-specific implementations live in separate folders:
 
@@ -35,6 +38,11 @@ input_adapter, output_renderer = create_ui(config.history_file)
 providers, tools, permissions, commands, and compaction manager do not know
 which UI implementation was selected.
 
+Agent events are recorded in a `Transcript` before they are forwarded to the
+selected output adapter. The transcript stores user and assistant messages,
+tool activity, and subagent lifecycle state. A future UI can render this state
+without changing the agent or provider interfaces.
+
 ## Switching to the minimal UI
 
 Change only the factory import in `main.py`:
@@ -58,4 +66,3 @@ def create_ui(history_file=None):
 Then change the single factory import in `main.py`. A full-screen framework
 with its own event loop may implement its own runner rather than using
 `InteractiveRunner`, but it can still reuse the agent and all non-UI modules.
-

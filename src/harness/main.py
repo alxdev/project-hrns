@@ -26,6 +26,7 @@ from harness.tools.bash import BashTool
 from harness.tools.read_file import ReadFileTool
 from harness.tools.registry import ToolRegistry
 from harness.tools.write_file import WriteFileTool
+from harness.transcript import Transcript, TranscriptEventSink
 
 
 def build_provider(config: HarnessConfig) -> OpenAIProvider | AnthropicProvider:
@@ -42,13 +43,14 @@ async def main(argv: list[str] | None = None) -> int:
     commands = build_default_commands()
     provider = build_provider(config)
     compaction = CompactionManager(provider)
+    transcript = Transcript()
     events: Any
     permissions: Any
     root_permissions: Any
     input_adapter: Any
 
     if config.non_interactive:
-        events = NullEventSink()
+        events = TranscriptEventSink(transcript, NullEventSink())
         permissions = AlwaysAllow() if config.allow_tools else AlwaysDeny()
         root_permissions = AlwaysAllow()
         input_adapter = None
@@ -57,7 +59,7 @@ async def main(argv: list[str] | None = None) -> int:
         from harness.ui.prompt_toolkit_rich import TUI_NAME, create_ui
 
         input_adapter, output = create_ui(config.history_file)
-        events = output
+        events = TranscriptEventSink(transcript, output)
 
         async def approve_tool(tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
             with output.suspend():
@@ -144,6 +146,7 @@ async def main(argv: list[str] | None = None) -> int:
         commands=commands,
         compaction=compaction,
         subagents=subagents,
+        transcript=transcript,
         runtime_info=lambda: format_runtime_configuration(
             provider=config.provider_name,
             model=provider.model,
