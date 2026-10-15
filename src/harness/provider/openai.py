@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any, cast
 
 from harness.api.types import (
@@ -13,6 +14,7 @@ from harness.api.types import (
     ToolDefinition,
     ToolResult,
 )
+from harness.provider.base import ProviderResponseCompleted, ProviderStreamEvent, ProviderTextDelta
 
 
 class OpenAIProvider:
@@ -114,10 +116,88 @@ class OpenAIProvider:
             "tool_calls": "tool_use",
             "function_call": "tool_use",
             "length": "max_tokens",
-        }.get(finish_reason, "unknown")
+        }.get(finish_reason or "", "unknown")
         return ProviderResponse(
             content=content,
             stop_reason=cast("StopReason", stop_reason),
+        )
+
+    async def stream(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolDefinition],
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        import httpx
+
+        wire_messages: list[dict[str, Any]] = [{"role": "system", "content": self.system}]
+        for message in messages:
+            translated = self._message_to_wire(message)
+            wire_messages.extend(translated if isinstance(translated, list) else [translated])
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "max_completion_tokens": self.max_tokens,
+            "messages": wire_messages,
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = [self._tool_to_wire(tool) for tool in tools]
+        assert self._api_key is not None
+        headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
+        text_parts: list[str] = []
+        tool_parts: dict[int, dict[str, str]] = {}
+        finish_reason: str | None = None
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream(
+                "POST", f"{self.base_url}/chat/completions", headers=headers, json=payload
+            ) as response:
+                if response.is_error:
+                    await response.aread()
+                    raise RuntimeError(
+                        f"provider request failed ({response.status_code}): {response.text}"
+                    )
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    raw = line[5:].strip()
+                    if raw == "[DONE]":
+                        break
+                    chunk = json.loads(raw)
+                    choices = chunk.get("choices", [])
+                    if not choices:
+                        continue
+                    choice = choices[0]
+                    delta = choice.get("delta", {})
+                    content = delta.get("content")
+                    if content:
+                        text_parts.append(content)
+                        yield ProviderTextDelta(content)
+                    for item in delta.get("tool_calls", []) or []:
+                        index = item.get("index", 0)
+                        part = tool_parts.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                        part["id"] += item.get("id", "")
+                        function = item.get("function", {})
+                        part["name"] += function.get("name", "")
+                        part["arguments"] += function.get("arguments", "")
+                    finish_reason = choice.get("finish_reason") or finish_reason
+        content_blocks: list[TextBlock | ToolCall] = []
+        if text_parts:
+            content_blocks.append(TextBlock("".join(text_parts)))
+        for part in (tool_parts[index] for index in sorted(tool_parts)):
+            try:
+                arguments = json.loads(part["arguments"] or "{}")
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(f"invalid tool arguments for {part['name']}: {exc}") from exc
+            if not isinstance(arguments, dict):
+                raise RuntimeError(f"tool arguments for {part['name']} must be an object")
+            content_blocks.append(ToolCall(part["id"], part["name"], arguments))
+        stop_reason = {
+            "stop": "end_turn",
+            "tool_calls": "tool_use",
+            "function_call": "tool_use",
+            "length": "max_tokens",
+        }.get(finish_reason or "", "unknown")
+        yield ProviderResponseCompleted(
+            ProviderResponse(content_blocks, cast("StopReason", stop_reason))
         )
 
     @staticmethod

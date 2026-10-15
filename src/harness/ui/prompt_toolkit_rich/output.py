@@ -11,7 +11,9 @@ from rich.status import Status
 
 from harness.agent.loop import (
     SubagentLifecycleEvent,
+    TextDeltaEvent,
     TextEvent,
+    TextStreamCompletedEvent,
     ToolCallEvent,
     ToolResultEvent,
 )
@@ -27,6 +29,16 @@ class RichOutput:
     async def emit(self, event: object) -> None:
         if isinstance(event, TextEvent):
             self.console.print(Markdown(event.text))
+        elif isinstance(event, TextDeltaEvent):
+            # Rich's Status uses a transient Live display that restores its
+            # previous screen contents when stopped. End it before printing
+            # streamed output so the response remains in the terminal.
+            if self._status is not None:
+                self._status.stop()
+                self._status = None
+            self.console.print(event.text, end="", markup=False, highlight=False)
+        elif isinstance(event, TextStreamCompletedEvent):
+            self.console.print()
         elif isinstance(event, ToolCallEvent):
             arguments = json.dumps(event.arguments, indent=2, sort_keys=True)
             prefix = event.log_prefix

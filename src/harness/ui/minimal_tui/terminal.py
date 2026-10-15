@@ -9,7 +9,9 @@ from typing import Any
 
 from harness.agent.loop import (
     SubagentLifecycleEvent,
+    TextDeltaEvent,
     TextEvent,
+    TextStreamCompletedEvent,
     ToolCallEvent,
     ToolResultEvent,
 )
@@ -22,6 +24,10 @@ class TerminalUI:
     async def emit(self, event: object) -> None:
         if isinstance(event, TextEvent):
             print(event.text)
+        elif isinstance(event, TextDeltaEvent):
+            print(event.text, end="", flush=True)
+        elif isinstance(event, TextStreamCompletedEvent):
+            print()
         elif isinstance(event, ToolCallEvent):
             print(
                 f"{event.log_prefix}[tool] {event.name} "

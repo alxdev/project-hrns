@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from harness.api.types import (
     AssistantMessage,
     Message,
+    ProviderResponse,
     TextBlock,
     ToolCall,
     ToolDefinition,
@@ -14,7 +15,7 @@ from harness.api.types import (
 )
 from harness.compaction import CompactionManager
 from harness.permissions.policies import PermissionDecision, PermissionPolicy
-from harness.provider.base import Provider
+from harness.provider.base import Provider, ProviderResponseCompleted, ProviderTextDelta
 from harness.tools.base import ToolContext
 from harness.tools.registry import ToolRegistry
 
@@ -92,6 +93,7 @@ class Agent:
     system_prompt: str | None = None
     log_prefix: str = ""
     quiet: bool = False
+    streaming: bool = True
 
     async def send(self, prompt: str) -> str:
         self.messages.append(UserMessage(prompt))
@@ -100,12 +102,12 @@ class Agent:
         for _ in range(self.max_turns):
             if self.compaction is not None:
                 self.messages = await self.compaction.compact(self.messages)
-            response = await self.provider.send(self.messages, self.tools.definitions())
+            response, streamed = await self._request_response()
             self.messages.append(AssistantMessage(response.content))
             text = "".join(block.text for block in response.content if isinstance(block, TextBlock))
             if text:
                 final_text = text
-                if not self.quiet:
+                if not self.quiet and not streamed:
                     await self.events.emit(TextEvent(text, self.name, self.log_prefix))
 
             calls = [block for block in response.content if isinstance(block, ToolCall)]
@@ -139,3 +141,21 @@ class Agent:
                 )
             self.messages.append(Message(role="user", content=results))
         raise RuntimeError(f"agent exceeded maximum turns ({self.max_turns})")
+
+    async def _request_response(self) -> tuple[ProviderResponse, bool]:
+        stream = getattr(self.provider, "stream", None)
+        if not self.streaming or not callable(stream):
+            return await self.provider.send(self.messages, self.tools.definitions()), False
+
+        response = None
+        async for event in stream(self.messages, self.tools.definitions()):
+            if isinstance(event, ProviderTextDelta):
+                if not self.quiet:
+                    await self.events.emit(TextDeltaEvent(event.text, self.name, self.log_prefix))
+            elif isinstance(event, ProviderResponseCompleted):
+                response = event.response
+        if response is None:
+            raise RuntimeError("streaming provider ended without a completed response")
+        if not self.quiet:
+            await self.events.emit(TextStreamCompletedEvent(self.name))
+        return response, True

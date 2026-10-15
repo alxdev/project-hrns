@@ -169,13 +169,17 @@ Use `/subagents` interactively to inspect available profiles and delegation
 status. The main agent can delegate through `delegate_explorer` or
 `delegate_coder`.
 
-### Phase 6 — Full terminal UI
+### Phase 6 — Streaming, cancellation, and richer UI foundations
 
 - 6.1 completed: framework-neutral transcript state reduced from agent events
-- Structured event-driven transcript rendering from that state
-- Scrollback and streaming output
-- Approval dialogs
-- Cancellation and live status indicators
+- 6.2 completed: OpenAI and Anthropic stream text by default through an optional
+  provider capability; send-only providers continue using the non-streaming path
+- Streamed text is delivered as framework-neutral delta/completion events and
+  rendered incrementally by both terminal adapters; tool calls are assembled
+  before approval or execution
+- 6.3: cancellation propagation from the UI through the agent and provider
+- 6.4: richer transcript-based rendering and live status; full-screen UI remains
+  a later, separate option
 
 Each phase should preserve the provider-neutral core and update this README
 with what was added and how to run it.

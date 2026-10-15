@@ -43,6 +43,13 @@ selected output adapter. The transcript stores user and assistant messages,
 tool activity, and subagent lifecycle state. A future UI can render this state
 without changing the agent or provider interfaces.
 
+Streaming-capable providers are used by default. Their text arrives as
+`TextDeltaEvent` events and is printed incrementally; `TextStreamCompletedEvent`
+ends the output line. Providers that only implement `send()` continue to emit a
+single completed `TextEvent`. Streamed tool calls are not exposed to the UI until
+the provider has assembled the complete response, so approval behavior remains
+unchanged.
+
 ## Switching to the minimal UI
 
 Change only the factory import in `main.py`:
