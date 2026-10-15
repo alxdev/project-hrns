@@ -48,6 +48,6 @@ def format_startup_message(
                 tui=tui,
             ),
             "Type /help to see commands or /exit to quit.",
-            "Shortcuts: Ctrl-C cancel input · Ctrl-D exit.",
+            "Shortcuts: Ctrl-C cancel input/operation · Ctrl-D exit.",
         ]
     )

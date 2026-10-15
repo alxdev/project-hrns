@@ -50,6 +50,13 @@ single completed `TextEvent`. Streamed tool calls are not exposed to the UI unti
 the provider has assembled the complete response, so approval behavior remains
 unchanged.
 
+Ctrl-C during an agent operation cancels its asyncio task. The agent closes its
+provider stream, which exits the provider's HTTP streaming context; this sends
+the connection close promptly, although the remote service ultimately controls
+whether generation stops immediately. Partial assistant text remains in the
+transcript with `interrupted` status. Ctrl-C at the prompt continues to cancel
+only the current input.
+
 ## Switching to the minimal UI
 
 Change only the factory import in `main.py`:

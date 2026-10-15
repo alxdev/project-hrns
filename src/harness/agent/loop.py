@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -51,6 +53,11 @@ class TextDeltaEvent:
 
 @dataclass(frozen=True)
 class TextStreamCompletedEvent:
+    agent: str = ""
+
+
+@dataclass(frozen=True)
+class TextStreamInterruptedEvent:
     agent: str = ""
 
 
@@ -148,12 +155,20 @@ class Agent:
             return await self.provider.send(self.messages, self.tools.definitions()), False
 
         response = None
-        async for event in stream(self.messages, self.tools.definitions()):
-            if isinstance(event, ProviderTextDelta):
-                if not self.quiet:
-                    await self.events.emit(TextDeltaEvent(event.text, self.name, self.log_prefix))
-            elif isinstance(event, ProviderResponseCompleted):
-                response = event.response
+        try:
+            async with aclosing(stream(self.messages, self.tools.definitions())) as events:
+                async for event in events:
+                    if isinstance(event, ProviderTextDelta):
+                        if not self.quiet:
+                            await self.events.emit(
+                                TextDeltaEvent(event.text, self.name, self.log_prefix)
+                            )
+                    elif isinstance(event, ProviderResponseCompleted):
+                        response = event.response
+        except asyncio.CancelledError:
+            if not self.quiet:
+                await self.events.emit(TextStreamInterruptedEvent(self.name))
+            raise
         if response is None:
             raise RuntimeError("streaming provider ended without a completed response")
         if not self.quiet:

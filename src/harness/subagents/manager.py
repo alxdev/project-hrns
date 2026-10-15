@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Callable, Mapping
 from datetime import datetime
@@ -86,6 +87,10 @@ class SubagentManager:
             record.result = await agent.send(prompt)
             record.status = SubagentStatus.COMPLETED
             return record
+        except asyncio.CancelledError:
+            record.error = "cancelled"
+            record.status = SubagentStatus.CANCELLED
+            raise
         except Exception as exc:
             record.error = str(exc)
             record.status = SubagentStatus.FAILED

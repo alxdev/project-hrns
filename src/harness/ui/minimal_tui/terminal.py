@@ -12,6 +12,7 @@ from harness.agent.loop import (
     TextDeltaEvent,
     TextEvent,
     TextStreamCompletedEvent,
+    TextStreamInterruptedEvent,
     ToolCallEvent,
     ToolResultEvent,
 )
@@ -26,7 +27,7 @@ class TerminalUI:
             print(event.text)
         elif isinstance(event, TextDeltaEvent):
             print(event.text, end="", flush=True)
-        elif isinstance(event, TextStreamCompletedEvent):
+        elif isinstance(event, (TextStreamCompletedEvent, TextStreamInterruptedEvent)):
             print()
         elif isinstance(event, ToolCallEvent):
             print(

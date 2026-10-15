@@ -37,7 +37,7 @@ Phase 3 adds an independent conversation-compaction package:
 
 At startup, the terminal UI displays the active provider, model, working
 directory, compaction strategy, registered tools, and approval behavior.
-It also shows `Ctrl-C` to cancel the current input and `Ctrl-D` to exit.
+It also shows `Ctrl-C` to cancel input or the current operation and `Ctrl-D` to exit.
 
 Phase 4 adds two execution modes:
 
@@ -177,7 +177,13 @@ status. The main agent can delegate through `delegate_explorer` or
 - Streamed text is delivered as framework-neutral delta/completion events and
   rendered incrementally by both terminal adapters; tool calls are assembled
   before approval or execution
-- 6.3: cancellation propagation from the UI through the agent and provider
+- 6.3 completed: a runtime operation controller handles Ctrl-C cancellation
+  outside the UI; provider streams close their HTTP response context, bash tools
+  terminate their process group, subagent records become `cancelled`, and partial
+  streamed text remains in the transcript with an `interrupted` status
+- Delegated calls are currently executed sequentially by the agent. If several
+  delegations are run concurrently by an orchestration layer, normal asyncio
+  parent-task cancellation propagates to each awaited child task.
 - 6.4: richer transcript-based rendering and live status; full-screen UI remains
   a later, separate option
 

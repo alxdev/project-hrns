@@ -14,6 +14,7 @@ from harness.config import HarnessConfig, parse_config
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny
 from harness.provider import AnthropicProvider, OpenAIProvider
 from harness.runtime.noninteractive import run_once
+from harness.runtime.operations import OperationController
 from harness.runtime.status import format_runtime_configuration, format_startup_message
 from harness.subagents import (
     DelegationTool,
@@ -156,5 +157,7 @@ async def main(argv: list[str] | None = None) -> int:
             tui=TUI_NAME,
         ),
     )
-    await InteractiveRunner(input_adapter, output).run(agent, commands, command_context)
+    await InteractiveRunner(input_adapter, output, OperationController()).run(
+        agent, commands, command_context
+    )
     return 0

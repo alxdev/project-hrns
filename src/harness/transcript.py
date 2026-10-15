@@ -11,6 +11,7 @@ from harness.agent.loop import (
     TextDeltaEvent,
     TextEvent,
     TextStreamCompletedEvent,
+    TextStreamInterruptedEvent,
     ToolCallEvent,
     ToolResultEvent,
     UserMessageEvent,
@@ -54,6 +55,8 @@ class Transcript:
             self.append_text_delta(event.agent, event.text)
         elif isinstance(event, TextStreamCompletedEvent):
             self.complete_text_stream(event.agent)
+        elif isinstance(event, TextStreamInterruptedEvent):
+            self.interrupt_text_stream(event.agent)
         elif isinstance(event, ToolCallEvent):
             entry = self._append(
                 "tool_call",
@@ -84,20 +87,20 @@ class Transcript:
                 )
         elif isinstance(event, SubagentLifecycleEvent):
             if event.phase == "started":
-                entry = self._append(
+                started_entry = self._append(
                     "subagent",
                     event.profile,
                     event.profile,
                     status="running",
                     metadata={"record_id": event.record_id},
                 )
-                self._subagent_entries[event.record_id] = entry
+                self._subagent_entries[event.record_id] = started_entry
             else:
-                entry = self._subagent_entries.get(event.record_id)
-                if entry is not None:
-                    entry.status = event.phase
-                    entry.updated_at = datetime.now()
-                    entry.metadata["elapsed_seconds"] = event.elapsed_seconds
+                completed_entry = self._subagent_entries.get(event.record_id)
+                if completed_entry is not None:
+                    completed_entry.status = event.phase
+                    completed_entry.updated_at = datetime.now()
+                    completed_entry.metadata["elapsed_seconds"] = event.elapsed_seconds
 
     def append_text_delta(self, agent: str, text: str) -> TranscriptEntry:
         """Append a future streaming text delta to the active assistant entry."""
@@ -113,6 +116,12 @@ class Transcript:
         entry = self._streaming_assistant_entries.pop(agent, None)
         if entry is not None:
             entry.status = "complete"
+            entry.updated_at = datetime.now()
+
+    def interrupt_text_stream(self, agent: str) -> None:
+        entry = self._streaming_assistant_entries.pop(agent, None)
+        if entry is not None:
+            entry.status = "interrupted"
             entry.updated_at = datetime.now()
 
     def entries(self) -> tuple[TranscriptEntry, ...]:

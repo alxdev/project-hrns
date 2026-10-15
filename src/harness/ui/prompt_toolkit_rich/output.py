@@ -14,6 +14,7 @@ from harness.agent.loop import (
     TextDeltaEvent,
     TextEvent,
     TextStreamCompletedEvent,
+    TextStreamInterruptedEvent,
     ToolCallEvent,
     ToolResultEvent,
 )
@@ -37,7 +38,7 @@ class RichOutput:
                 self._status.stop()
                 self._status = None
             self.console.print(event.text, end="", markup=False, highlight=False)
-        elif isinstance(event, TextStreamCompletedEvent):
+        elif isinstance(event, (TextStreamCompletedEvent, TextStreamInterruptedEvent)):
             self.console.print()
         elif isinstance(event, ToolCallEvent):
             arguments = json.dumps(event.arguments, indent=2, sort_keys=True)
