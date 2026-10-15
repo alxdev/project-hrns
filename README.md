@@ -184,8 +184,9 @@ status. The main agent can delegate through `delegate_explorer` or
 - Delegated calls are currently executed sequentially by the agent. If several
   delegations are run concurrently by an orchestration layer, normal asyncio
   parent-task cancellation propagates to each awaited child task.
-- 6.4: richer transcript-based rendering and live status; full-screen UI remains
-  a later, separate option
+- 6.4 completed: terminal adapters render detached transcript updates, including
+  streaming/interrupted assistant text, tool lifecycle, and subagent lifecycle;
+  the Rich status line tracks the active work without requiring a full-screen UI
 
 Each phase should preserve the provider-neutral core and update this README
 with what was added and how to run it.

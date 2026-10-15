@@ -38,17 +38,24 @@ input_adapter, output_renderer = create_ui(config.history_file)
 providers, tools, permissions, commands, and compaction manager do not know
 which UI implementation was selected.
 
-Agent events are recorded in a `Transcript` before they are forwarded to the
-selected output adapter. The transcript stores user and assistant messages,
-tool activity, and subagent lifecycle state. A future UI can render this state
-without changing the agent or provider interfaces.
+Agent events are reduced into `Transcript` state before the selected output
+adapter is called. The adapter receives a detached `TranscriptUpdateEvent`
+containing the changed entry and current activity label, rather than depending
+on provider or agent internals. This keeps the UI replaceable while making the
+transcript the rendering model.
 
 Streaming-capable providers are used by default. Their text arrives as
-`TextDeltaEvent` events and is printed incrementally; `TextStreamCompletedEvent`
-ends the output line. Providers that only implement `send()` continue to emit a
-single completed `TextEvent`. Streamed tool calls are not exposed to the UI until
-the provider has assembled the complete response, so approval behavior remains
-unchanged.
+transcript updates and is printed incrementally; completion or interruption
+closes the output line. Providers that only implement `send()` produce a
+completed assistant transcript entry. Streamed tool calls are not exposed to
+the UI until the provider has assembled the complete response, so approval
+behavior remains unchanged.
+
+The Rich adapter updates its status line as the transcript moves through
+thinking, permission checking, tool execution, delegation, and response
+streaming. Tool and subagent output is rendered from their transcript entries;
+the minimal adapter uses the same updates for plain terminal output. This is
+line-oriented rendering, not a full-screen UI.
 
 Ctrl-C during an agent operation cancels its asyncio task. The agent closes its
 provider stream, which exits the provider's HTTP streaming context; this sends

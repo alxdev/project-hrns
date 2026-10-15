@@ -7,42 +7,65 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from harness.agent.loop import (
-    SubagentLifecycleEvent,
-    TextDeltaEvent,
-    TextEvent,
-    TextStreamCompletedEvent,
-    TextStreamInterruptedEvent,
-    ToolCallEvent,
-    ToolResultEvent,
-)
 from harness.api.types import ToolDefinition
+from harness.transcript import TranscriptEntry, TranscriptUpdateEvent
 
 
 class TerminalUI:
     """The original minimal input/output terminal adapter."""
 
+    def __init__(self) -> None:
+        self._rendered_text_lengths: dict[str, int] = {}
+
     async def emit(self, event: object) -> None:
-        if isinstance(event, TextEvent):
-            print(event.text)
-        elif isinstance(event, TextDeltaEvent):
-            print(event.text, end="", flush=True)
-        elif isinstance(event, (TextStreamCompletedEvent, TextStreamInterruptedEvent)):
+        if not isinstance(event, TranscriptUpdateEvent) or event.entry is None:
+            return
+        entry = event.entry
+        if entry.kind == "assistant":
+            self._render_assistant(entry, event.is_new)
+        elif entry.kind == "tool_call":
+            self._render_tool(entry, event.is_new)
+        elif entry.kind == "subagent":
+            self._render_subagent(entry, event.is_new)
+
+    def _render_assistant(self, entry: TranscriptEntry, is_new: bool) -> None:
+        if entry.status == "streaming":
+            previous_length = self._rendered_text_lengths.get(entry.id, 0)
+            delta = entry.content[previous_length:]
+            if delta:
+                print(delta, end="", flush=True)
+            self._rendered_text_lengths[entry.id] = len(entry.content)
+            return
+        rendered_length = (
+            self._rendered_text_lengths.pop(entry.id)
+            if entry.id in self._rendered_text_lengths
+            else None
+        )
+        if rendered_length is not None:
             print()
-        elif isinstance(event, ToolCallEvent):
-            print(
-                f"{event.log_prefix}[tool] {event.name} "
-                f"{json.dumps(event.arguments, sort_keys=True)}"
-            )
-        elif isinstance(event, ToolResultEvent):
-            prefix = "[tool error]" if event.result.is_error else "[tool result]"
-            print(f"{event.log_prefix}{prefix} {event.result.content}")
-        elif isinstance(event, SubagentLifecycleEvent):
-            if event.phase == "started":
-                print(f"↳ delegating to {event.profile} ({event.record_id})")
-            else:
-                elapsed = event.elapsed_seconds or 0
-                print(f"← {event.profile} {event.phase} ({elapsed:.1f}s)")
+            if entry.status == "interrupted":
+                print("[response interrupted]")
+        elif is_new and entry.content:
+            print(entry.content)
+
+    def _render_tool(self, entry: TranscriptEntry, is_new: bool) -> None:
+        prefix = str(entry.metadata.get("log_prefix", ""))
+        if is_new:
+            arguments = entry.metadata.get("arguments", {})
+            print(f"{prefix}[tool] {entry.content} {json.dumps(arguments, sort_keys=True)}")
+        elif entry.status in {"completed", "failed"}:
+            label = "tool error" if entry.status == "failed" else "tool result"
+            print(f"{prefix}[{label}] {entry.metadata.get('result', '')}")
+
+    @staticmethod
+    def _render_subagent(entry: TranscriptEntry, is_new: bool) -> None:
+        if is_new:
+            record_id = entry.metadata.get("record_id", "")
+            print(f"↳ delegating to {entry.content} ({record_id})")
+            return
+        elapsed = entry.metadata.get("elapsed_seconds", 0.0)
+        elapsed_seconds = elapsed if isinstance(elapsed, (int, float)) else 0.0
+        print(f"← {entry.content} {entry.status} ({elapsed_seconds:.1f}s)")
 
     async def approve(self, tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
         answer = await asyncio.to_thread(

@@ -71,6 +71,14 @@ class ToolCallEvent:
 
 
 @dataclass(frozen=True)
+class ToolExecutionEvent:
+    name: str
+    tool_call_id: str
+    agent: str = ""
+    log_prefix: str = ""
+
+
+@dataclass(frozen=True)
 class ToolResultEvent:
     name: str
     result: ToolResult
@@ -140,6 +148,14 @@ class Agent:
                 if decision is PermissionDecision.DENY:
                     result = ToolResult(call.id, "user denied this tool call", is_error=True)
                 else:
+                    await self.events.emit(
+                        ToolExecutionEvent(
+                            call.name,
+                            call.id,
+                            self.name,
+                            self.log_prefix,
+                        )
+                    )
                     result = await self.tools.execute(self.context, call.name, call.input)
                     result = ToolResult(call.id, result.content, result.is_error)
                 results.append(result)
