@@ -4,7 +4,7 @@ The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
 changing the agent loop.
 
-## Current status: Phase 1
+## Current status: Phase 5
 
 Phase 1 establishes the smallest useful harness:
 
@@ -17,6 +17,62 @@ Phase 1 establishes the smallest useful harness:
 - Approval before every tool call
 - A plain terminal runner
 - Tests for the agent loop, tool registry, and permission behavior
+
+Phase 2 adds an independent interactive-shell layer:
+
+- Rich Markdown and panel rendering
+- Rich status spinner while the provider is working
+- A modular slash-command registry
+- `/help`, `/model`, `/clear`, `/tools`, `/exit`, and `/quit`
+
+Phase 3 adds an independent conversation-compaction package:
+
+- No-op, sliding-window, and model-summarization strategies
+- Safe split points that preserve tool-call/result pairs
+- A compaction manager and reports
+- Optional JSONL compaction logging
+- `/compact [none|sliding|summarize]`
+- `/verbose [on|off]`
+- `/status` to display the current runtime configuration
+
+At startup, the terminal UI displays the active provider, model, working
+directory, compaction strategy, registered tools, and approval behavior.
+It also shows `Ctrl-C` to cancel input or the current operation and `Ctrl-D` to exit.
+
+Phase 4 adds two execution modes:
+
+- Interactive input through prompt-toolkit with persistent history
+- Non-interactive execution with `--prompt` or `--stdin`
+- Plain-text or JSON output for automated use
+- Explicit command-line and environment configuration
+- Safe non-interactive permissions that deny tool calls by default
+- Separate input, output, and interactive-runner UI components
+- Framework-specific UI code organized under `ui/prompt_toolkit_rich/` and `ui/minimal_tui/`
+
+The agent loop and existing provider/tool implementations remain unchanged.
+
+Phase 4.5 adds a small development-quality toolchain:
+
+- Ruff for linting, import organization, and formatting checks
+- mypy for static type checking of the application source
+- Configuration for both tools in `pyproject.toml`
+
+Phase 5 adds an independent subagent layer:
+
+- Reusable `explorer` and `coder` agent profiles
+- Curated tool sets for each profile
+- Profile-specific `delegate_explorer` and `delegate_coder` tools
+- Active and completed subagent tracking
+- Isolated agent state, system prompts, permission modes, and lifecycle events
+- `/subagents` for viewing profiles and delegation activity
+
+The root agent uses strict delegation. Its tool registry contains only
+`delegate_explorer` and `delegate_coder`; it does not receive the base
+`read_file`, `write_file`, or `bash` tools. The `explorer` subagent handles
+read-only inspection, while the `coder` subagent handles file changes and shell
+commands. This keeps planning/routing separate from workspace execution.
+Delegation itself is automatically allowed; approval is reserved for the
+subagent's actual file and shell operations.
 
 Run the application with:
 
@@ -75,45 +131,95 @@ boundary, tools, approval gate, terminal runner, and test seam.
 
 ### Phase 2 — Interactive shell
 
-- Rich output and Markdown rendering
-- Better progress feedback
-- Slash commands such as `/help`, `/model`, `/clear`, and `/tools`
-- More explicit configuration
+Completed. The Rich frontend and command registry are separate modules. The
+basic terminal frontend remains available as a simpler UI implementation.
 
 ### Phase 3 — Conversation management
 
-- Pluggable compaction strategies
-- Safe history boundaries around tool calls
-- Summarization and compaction logging
+Completed. The implementation lives in `src/harness/compaction/` and is
+connected to the agent through one optional `CompactionManager` dependency.
 
 ### Phase 4 — Input and package refinement
 
-- Improved line editing and history
-- Non-interactive execution mode
-- Stronger tool registration and dependency injection
-- Broader automated test coverage
+Completed. The input adapter, output renderer, interactive runner, runtime
+configuration, and non-interactive runner are separate modules. The agent loop
+does not depend on prompt-toolkit or Rich.
+
+Examples:
+
+```sh
+python -m harness --prompt "Summarize this project"
+python -m harness --stdin < task.txt
+python -m harness --prompt "List the files" --output json
+python -m harness --prompt "List the files" --allow-tools
+```
+
+Non-interactive runs deny tools by default. Add `--allow-tools` only when the
+prompt is trusted and tool execution is intended. JSON output reports the
+selected permission mode as `tools_allowed`.
 
 ### Phase 5 — Subagents
 
-- Reusable agent instances
-- Curated tool sets
-- Delegation tools
-- Active-subagent tracking
+Completed. The implementation lives in `src/harness/subagents/`. The main
+agent receives only profile-specific delegation tools while each subagent gets its
+own isolated agent instance, system prompt, permission mode, and curated
+`ToolRegistry`.
 
-### Phase 6 — Full terminal UI
+Use `/subagents` interactively to inspect available profiles and delegation
+status. The main agent can delegate through `delegate_explorer` or
+`delegate_coder`.
 
-- Structured event-driven transcript rendering
-- Scrollback and streaming output
-- Approval dialogs
-- Cancellation and live status indicators
+### Phase 6 — Streaming, cancellation, and richer UI foundations
+
+- 6.1 completed: framework-neutral transcript state reduced from agent events
+- 6.2 completed: OpenAI and Anthropic stream text by default through an optional
+  provider capability; send-only providers continue using the non-streaming path
+- Streamed text is delivered as framework-neutral delta/completion events and
+  rendered incrementally by both terminal adapters; tool calls are assembled
+  before approval or execution
+- 6.3 completed: a runtime operation controller handles Ctrl-C cancellation
+  outside the UI; provider streams close their HTTP response context, bash tools
+  terminate their process group, subagent records become `cancelled`, and partial
+  streamed text remains in the transcript with an `interrupted` status
+- Delegated calls are currently executed sequentially by the agent. If several
+  delegations are run concurrently by an orchestration layer, normal asyncio
+  parent-task cancellation propagates to each awaited child task.
+- 6.4 completed: terminal adapters render detached transcript updates, including
+  streaming/interrupted assistant text, tool lifecycle, and subagent lifecycle;
+  the Rich status line tracks the active work without requiring a full-screen UI
 
 Each phase should preserve the provider-neutral core and update this README
 with what was added and how to run it.
 
 ## Development
 
-Run the test suite with:
+Install the development dependencies with:
+
+```sh
+pip install -e '.[dev]'
+```
+
+Run the test suite, lint checks, formatting check, and type check with:
 
 ```sh
 pytest
+ruff check .
+ruff format --check .
+mypy src
+```
+
+The same checks can be run together through the `Makefile`:
+
+```sh
+make check
+```
+
+Individual targets are also available: `make test`, `make lint`,
+`make format-check`, `make format`, and `make type-check`.
+
+Ruff can apply safe formatting and import fixes with:
+
+```sh
+ruff check . --fix
+ruff format .
 ```

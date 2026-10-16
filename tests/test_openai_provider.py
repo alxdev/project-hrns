@@ -1,6 +1,6 @@
 import json
 
-from harness.api.types import Message, TextBlock, ToolCall, ToolDefinition, ToolResult
+from harness.api.types import Message, ToolCall, ToolDefinition, ToolResult
 from harness.provider.openai import OpenAIProvider
 
 
@@ -29,9 +29,7 @@ def test_openai_assistant_tool_call_translation():
 
     assert wire["role"] == "assistant"
     assert wire["tool_calls"][0]["id"] == "call-1"
-    assert json.loads(wire["tool_calls"][0]["function"]["arguments"]) == {
-        "path": "README.md"
-    }
+    assert json.loads(wire["tool_calls"][0]["function"]["arguments"]) == {"path": "README.md"}
 
 
 def test_openai_tool_results_become_tool_messages():
@@ -42,7 +40,4 @@ def test_openai_tool_results_become_tool_messages():
 
     wire = OpenAIProvider._message_to_wire(message)
 
-    assert wire == [
-        {"role": "tool", "tool_call_id": "call-1", "content": "file contents"}
-    ]
-
+    assert wire == [{"role": "tool", "tool_call_id": "call-1", "content": "file contents"}]

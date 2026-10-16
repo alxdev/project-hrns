@@ -1,4 +1,3 @@
-from .policies import AlwaysAsk, PermissionDecision, PermissionPolicy
+from .policies import AlwaysAllow, AlwaysAsk, AlwaysDeny, PermissionDecision, PermissionPolicy
 
-__all__ = ["AlwaysAsk", "PermissionDecision", "PermissionPolicy"]
-
+__all__ = ["AlwaysAllow", "AlwaysAsk", "AlwaysDeny", "PermissionDecision", "PermissionPolicy"]

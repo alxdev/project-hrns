@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from harness.api.types import ToolDefinition, ToolResult
 from harness.tools.base import Tool, ToolContext
@@ -34,4 +35,3 @@ class ToolRegistry:
             return await tool.execute(context, arguments)
         except Exception as exc:
             return ToolResult(name, f"tool failed: {exc}", is_error=True)
-

@@ -15,4 +15,3 @@ def test_duplicate_tools_are_rejected():
         assert "already registered" in str(exc)
     else:
         raise AssertionError("duplicate tool should fail")
-

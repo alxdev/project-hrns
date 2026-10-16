@@ -12,6 +12,14 @@ class AllowAll:
         return PermissionDecision.ALLOW
 
 
+class EventCollector:
+    def __init__(self):
+        self.events = []
+
+    async def emit(self, event):
+        self.events.append(event)
+
+
 async def test_agent_completes_after_tool_call(tmp_path):
     provider = MockProvider(
         responses=[
@@ -59,3 +67,18 @@ async def test_denied_tool_is_returned_as_error_result(tmp_path):
     assert denied.is_error is True
     assert denied.content == "user denied this tool call"
 
+
+async def test_quiet_agent_returns_text_without_emitting_transcript(tmp_path):
+    provider = MockProvider(responses=[ProviderResponse([TextBlock("private result")], "end_turn")])
+    events = EventCollector()
+    agent = Agent(
+        provider=provider,
+        tools=ToolRegistry(),
+        permissions=AllowAll(),
+        context=ToolContext(tmp_path),
+        events=events,
+        quiet=True,
+    )
+
+    assert await agent.send("Do the private task") == "private result"
+    assert events.events == []
