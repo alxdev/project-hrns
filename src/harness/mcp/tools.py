@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,14 +12,16 @@ from harness.tools.base import ToolContext
 
 @dataclass
 class MCPTool:
-    client: Any
+    client_factory: Callable[[str], AbstractAsyncContextManager[Any]]
+    url: str
     server_name: str
     remote_name: str
     definition: ToolDefinition
 
     async def execute(self, context: ToolContext, arguments: dict[str, Any]) -> ToolResult:
         del context
-        result = await self.client.call_tool(self.remote_name, arguments)
+        async with self.client_factory(self.url) as client:
+            result = await client.call_tool(self.remote_name, arguments)
         parts: list[str] = []
         for item in getattr(result, "content", ()) or ():
             text = getattr(item, "text", None)

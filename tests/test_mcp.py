@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,11 +26,14 @@ class FakeClient:
     def __init__(self, _url):
         self.closed = False
         self.calls = []
+        self.owner_task = None
 
     async def __aenter__(self):
+        self.owner_task = asyncio.current_task()
         return self
 
     async def __aexit__(self, *_args):
+        assert asyncio.current_task() is self.owner_task
         self.closed = True
 
     async def list_tools(self):
@@ -96,7 +100,7 @@ def test_mcp_command_persists_profile_or_global_registration(tmp_path: Path):
     ]
 
 
-async def test_mcp_discovery_is_scoped_cached_and_connection_closed(tmp_path: Path):
+async def test_mcp_discovery_is_scoped_cached_and_connections_are_task_local(tmp_path: Path):
     store = MCPConfigStore(tmp_path / "mcp.json")
     store.add(MCPServerConfig("docs", "https://docs.example.com/mcp", "agent", "explorer"))
     store.add(MCPServerConfig("mail", "https://mail.example.com/mcp", "global"))
@@ -122,11 +126,10 @@ async def test_mcp_discovery_is_scoped_cached_and_connection_closed(tmp_path: Pa
     assert [tool.definition.name for tool in coder_tools] == ["mcp_mail_search"]
     assert again is explorer_tools
     assert len(clients) == 2
+    assert all(client.closed for client in clients)
     result = await explorer_tools[0].execute(ToolContext(tmp_path), {"query": "hello"})
     assert result.content == "found it"
-    assert clients[0].calls == [("search", {"query": "hello"})]
-
-    await manager.close()
+    assert clients[2].calls == [("search", {"query": "hello"})]
     assert all(client.closed for client in clients)
 
 
@@ -149,7 +152,6 @@ async def test_mcp_discovery_failure_is_cached_and_reported(tmp_path: Path):
     assert await manager.tools_for("coder") == ()
     assert attempts == 1
     assert [event.phase for event in events.events] == ["started", "failed"]
-    await manager.close()
 
 
 def test_transcript_reports_mcp_discovery_activity_and_outcome():

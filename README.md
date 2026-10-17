@@ -193,7 +193,7 @@ with what was added and how to run it.
 
 ### Phase 7 — MCP tools for agents
 
-MCP tools are optional and are discovered lazily from configured Streamable
+MCP tools are discovered lazily from configured Streamable
 HTTP endpoints. The project-local `mcp.json` stores endpoint names, URLs, and
 scope; tool definitions are fetched from the MCP endpoint on first use and
 cached for the rest of the process. A server can be scoped to one subagent or
@@ -201,8 +201,9 @@ registered with `--global` for all agents, including the root agent. Global
 tools are still discovered only when the root agent first receives a prompt;
 subagent tools are discovered synchronously before that subagent's first agent
 loop. Discovery status is shown in the active UI, and success or server-provided
-failure details are logged. Each configured MCP server connection is closed
-when the harness exits.
+failure details are logged. Connections are opened for discovery and individual
+tool calls, then closed in the same async task that opened them; only the tool
+definitions are cached for the session.
 
 The MCP client is installed with the application dependencies. For an editable
 development install, use:

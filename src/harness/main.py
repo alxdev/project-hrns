@@ -128,51 +128,48 @@ async def main(argv: list[str] | None = None) -> int:
         before_send=load_global_mcp_tools,
     )
 
-    try:
-        if config.non_interactive:
-            prompt = config.prompt if config.prompt is not None else sys.stdin.read()
-            return await run_once(
-                agent,
-                prompt,
-                output=config.output,
-                provider=config.provider_name,
-                model=provider.model,
-                working_directory=config.working_directory,
-                compaction=compaction.strategy_name,
-                tools_allowed=config.allow_tools,
-            )
+    if config.non_interactive:
+        prompt = config.prompt if config.prompt is not None else sys.stdin.read()
+        return await run_once(
+            agent,
+            prompt,
+            output=config.output,
+            provider=config.provider_name,
+            model=provider.model,
+            working_directory=config.working_directory,
+            compaction=compaction.strategy_name,
+            tools_allowed=config.allow_tools,
+        )
 
-        output.write(
-            format_startup_message(
-                provider=config.provider_name,
-                model=provider.model,
-                working_directory=config.working_directory,
-                compaction=compaction.strategy_name,
-                tools=[definition.name for definition in registry.definitions()],
-                tui=TUI_NAME,
-            )
+    output.write(
+        format_startup_message(
+            provider=config.provider_name,
+            model=provider.model,
+            working_directory=config.working_directory,
+            compaction=compaction.strategy_name,
+            tools=[definition.name for definition in registry.definitions()],
+            tui=TUI_NAME,
         )
-        command_context = CommandContext(
-            agent=agent,
-            provider=provider,
-            tools=registry,
-            commands=commands,
-            compaction=compaction,
-            subagents=subagents,
-            transcript=transcript,
-            runtime_info=lambda: format_runtime_configuration(
-                provider=config.provider_name,
-                model=provider.model,
-                working_directory=config.working_directory,
-                compaction=compaction.strategy_name,
-                tools=[definition.name for definition in registry.definitions()],
-                tui=TUI_NAME,
-            ),
-            mcp=mcp_manager,
-        )
-        await InteractiveRunner(input_adapter, output, OperationController()).run(
-            agent, commands, command_context
-        )
-        return 0
-    finally:
-        await mcp_manager.close()
+    )
+    command_context = CommandContext(
+        agent=agent,
+        provider=provider,
+        tools=registry,
+        commands=commands,
+        compaction=compaction,
+        subagents=subagents,
+        transcript=transcript,
+        runtime_info=lambda: format_runtime_configuration(
+            provider=config.provider_name,
+            model=provider.model,
+            working_directory=config.working_directory,
+            compaction=compaction.strategy_name,
+            tools=[definition.name for definition in registry.definitions()],
+            tui=TUI_NAME,
+        ),
+        mcp=mcp_manager,
+    )
+    await InteractiveRunner(input_adapter, output, OperationController()).run(
+        agent, commands, command_context
+    )
+    return 0

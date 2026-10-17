@@ -14,7 +14,7 @@ from .tools import MCPTool
 
 
 class MCPToolManager:
-    """Lazily discovers MCP tools and keeps each connection for the session."""
+    """Lazily discovers MCP tools and caches their definitions for the session."""
 
     def __init__(
         self,
@@ -24,7 +24,6 @@ class MCPToolManager:
         self.store = store
         self.events = events
         self._load_tasks: dict[tuple[str, str], asyncio.Task[tuple[Tool, ...]]] = {}
-        self._clients: list[Any] = []
         self._client_factory: Any = None
         self._tools_by_scope: dict[str, tuple[Tool, ...]] = {}
         self._server_errors: dict[tuple[str, str], str] = {}
@@ -107,25 +106,35 @@ class MCPToolManager:
         label = self._display_name(server.name)
         await self.events.emit(MCPDiscoveryEvent(profile, label, "started"))
         try:
-            client = await self._connect(server.url)
-            response = await client.list_tools()
-            remote_tools = getattr(response, "tools", ())
-            adapted: list[Tool] = []
-            seen: set[str] = set()
-            for remote in remote_tools:
-                remote_name = getattr(remote, "name", None)
-                if not isinstance(remote_name, str) or not remote_name:
-                    continue
-                tool_name = f"mcp_{server.name}_{remote_name}"
-                if tool_name in seen:
-                    continue
-                seen.add(tool_name)
-                schema = getattr(remote, "input_schema", None)
-                if not isinstance(schema, dict):
-                    schema = {"type": "object", "properties": {}}
-                description = getattr(remote, "description", None) or "MCP-provided external tool."
-                definition = ToolDefinition(tool_name, description, schema)
-                adapted.append(MCPTool(client, server.name, remote_name, definition))
+            async with self._client_factory_for(server.url) as client:
+                response = await client.list_tools()
+                remote_tools = getattr(response, "tools", ())
+                adapted: list[Tool] = []
+                seen: set[str] = set()
+                for remote in remote_tools:
+                    remote_name = getattr(remote, "name", None)
+                    if not isinstance(remote_name, str) or not remote_name:
+                        continue
+                    tool_name = f"mcp_{server.name}_{remote_name}"
+                    if tool_name in seen:
+                        continue
+                    seen.add(tool_name)
+                    schema = getattr(remote, "input_schema", None)
+                    if not isinstance(schema, dict):
+                        schema = {"type": "object", "properties": {}}
+                    description = (
+                        getattr(remote, "description", None) or "MCP-provided external tool."
+                    )
+                    definition = ToolDefinition(tool_name, description, schema)
+                    adapted.append(
+                        MCPTool(
+                            self._client_factory_for,
+                            server.url,
+                            server.name,
+                            remote_name,
+                            definition,
+                        )
+                    )
             await self.events.emit(
                 MCPDiscoveryEvent(profile, label, "completed", tool_count=len(adapted))
             )
@@ -141,7 +150,7 @@ class MCPToolManager:
     def _display_name(name: str) -> str:
         return name.replace("_", " ").replace("-", " ").title()
 
-    async def _connect(self, url: str) -> Any:
+    def _client_factory_for(self, url: str) -> Any:
         if self._client_factory is None:
             try:
                 module = cast(Any, importlib.import_module("mcp"))
@@ -151,21 +160,7 @@ class MCPToolManager:
                     "dependencies with `pip install -e .`."
                 ) from exc
             self._client_factory = module.Client
-        client = self._client_factory(url)
-        await client.__aenter__()
-        self._clients.append(client)
-        return client
-
-    async def close(self) -> None:
-        clients, self._clients = self._clients, []
-        errors: list[str] = []
-        for client in reversed(clients):
-            try:
-                await client.__aexit__(None, None, None)
-            except Exception as exc:
-                errors.append(str(exc))
-        if errors:
-            raise RuntimeError("MCP client shutdown failed: " + "; ".join(errors))
+        return self._client_factory(url)
 
     def describe(self) -> str:
         try:
