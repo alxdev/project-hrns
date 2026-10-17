@@ -4,7 +4,7 @@ The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
 changing the agent loop.
 
-## Current status: Phase 5
+## Current status: Phase 7 — MCP tool integration
 
 Phase 1 establishes the smallest useful harness:
 
@@ -190,6 +190,41 @@ status. The main agent can delegate through `delegate_explorer` or
 
 Each phase should preserve the provider-neutral core and update this README
 with what was added and how to run it.
+
+### Phase 7 — MCP tools for agents
+
+MCP tools are optional and are discovered lazily from configured Streamable
+HTTP endpoints. The project-local `mcp.json` stores endpoint names, URLs, and
+scope; tool definitions are fetched from the MCP endpoint on first use and
+cached for the rest of the process. A server can be scoped to one subagent or
+registered with `--global` for all agents, including the root agent. Global
+tools are still discovered only when the root agent first receives a prompt;
+subagent tools are discovered synchronously before that subagent's first agent
+loop. Discovery status is shown in the active UI, and success or server-provided
+failure details are logged. Each configured MCP server connection is closed
+when the harness exits.
+
+Install the optional MCP client dependency with:
+
+```sh
+pip install -e '.[mcp]'
+```
+
+Register a server interactively:
+
+```text
+/mcp add https://example.com/mcp --agent researcher --name docs
+/mcp add https://example.com/mcp --global --name docs
+/mcp list
+/mcp remove docs
+```
+
+`--agent` and `--global` are mutually exclusive. Global means all configured
+agents (including the root agent); otherwise tools are only exposed to the
+named subagent. MCP tools are namespaced as `mcp_<server>_<tool>` and pass
+through the harness's normal permission and cancellation behavior. The first
+implementation supports URL-based Streamable HTTP servers; authentication
+options and stdio server launching are not included.
 
 ## Development
 

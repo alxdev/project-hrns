@@ -21,6 +21,9 @@ dev = [
     "ruff>=0.9,<1",
     "mypy>=1.14,<2",
 ]
+mcp = [
+    "mcp>=2,<3",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

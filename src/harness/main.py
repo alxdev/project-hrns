@@ -11,7 +11,8 @@ from harness.api.types import ToolDefinition
 from harness.commands import CommandContext, build_default_commands
 from harness.compaction import CompactionManager
 from harness.config import HarnessConfig, parse_config
-from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny
+from harness.mcp import MCPConfigStore, MCPToolManager
+from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
 from harness.provider import AnthropicProvider, OpenAIProvider
 from harness.runtime.noninteractive import run_once
 from harness.runtime.operations import OperationController
@@ -73,6 +74,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     base_tools: list[Tool] = [ReadFileTool(), WriteFileTool(), BashTool()]
     profiles = build_default_profiles(base_tools)
+    mcp_manager = MCPToolManager(MCPConfigStore(config.working_directory / "mcp.json"), events)
     context = ToolContext(config.working_directory)
 
     def create_subagent(profile: SubagentProfile) -> Agent:
@@ -98,7 +100,9 @@ async def main(argv: list[str] | None = None) -> int:
             quiet=True,
         )
 
-    subagents = SubagentManager(create_subagent, profiles, events=events)
+    subagents = SubagentManager(
+        create_subagent, profiles, events=events, tool_loader=mcp_manager.tools_for
+    )
     delegation_tools = [
         DelegationTool(profile.name, profile.description) for profile in profiles.values()
     ]
@@ -107,57 +111,68 @@ async def main(argv: list[str] | None = None) -> int:
     # Keep the root agent as a strict planner/router. Workspace inspection,
     # file writes, and shell execution are available only through subagents.
     registry = ToolRegistry(delegation_tools)
+
+    async def load_global_mcp_tools() -> None:
+        for tool in await mcp_manager.tools_for("root"):
+            if not any(item.name == tool.definition.name for item in registry.definitions()):
+                registry.register(tool)
+
     agent = Agent(
         provider=provider,
         tools=registry,
-        permissions=root_permissions,
+        permissions=RoutedPermissionPolicy(root_permissions, {"mcp_": permissions}),
         context=context,
         events=events,
         compaction=compaction,
         name="root",
+        before_send=load_global_mcp_tools,
     )
 
-    if config.non_interactive:
-        prompt = config.prompt if config.prompt is not None else sys.stdin.read()
-        return await run_once(
-            agent,
-            prompt,
-            output=config.output,
-            provider=config.provider_name,
-            model=provider.model,
-            working_directory=config.working_directory,
-            compaction=compaction.strategy_name,
-            tools_allowed=config.allow_tools,
-        )
+    try:
+        if config.non_interactive:
+            prompt = config.prompt if config.prompt is not None else sys.stdin.read()
+            return await run_once(
+                agent,
+                prompt,
+                output=config.output,
+                provider=config.provider_name,
+                model=provider.model,
+                working_directory=config.working_directory,
+                compaction=compaction.strategy_name,
+                tools_allowed=config.allow_tools,
+            )
 
-    output.write(
-        format_startup_message(
-            provider=config.provider_name,
-            model=provider.model,
-            working_directory=config.working_directory,
-            compaction=compaction.strategy_name,
-            tools=[definition.name for definition in registry.definitions()],
-            tui=TUI_NAME,
+        output.write(
+            format_startup_message(
+                provider=config.provider_name,
+                model=provider.model,
+                working_directory=config.working_directory,
+                compaction=compaction.strategy_name,
+                tools=[definition.name for definition in registry.definitions()],
+                tui=TUI_NAME,
+            )
         )
-    )
-    command_context = CommandContext(
-        agent=agent,
-        provider=provider,
-        tools=registry,
-        commands=commands,
-        compaction=compaction,
-        subagents=subagents,
-        transcript=transcript,
-        runtime_info=lambda: format_runtime_configuration(
-            provider=config.provider_name,
-            model=provider.model,
-            working_directory=config.working_directory,
-            compaction=compaction.strategy_name,
-            tools=[definition.name for definition in registry.definitions()],
-            tui=TUI_NAME,
-        ),
-    )
-    await InteractiveRunner(input_adapter, output, OperationController()).run(
-        agent, commands, command_context
-    )
-    return 0
+        command_context = CommandContext(
+            agent=agent,
+            provider=provider,
+            tools=registry,
+            commands=commands,
+            compaction=compaction,
+            subagents=subagents,
+            transcript=transcript,
+            runtime_info=lambda: format_runtime_configuration(
+                provider=config.provider_name,
+                model=provider.model,
+                working_directory=config.working_directory,
+                compaction=compaction.strategy_name,
+                tools=[definition.name for definition in registry.definitions()],
+                tui=TUI_NAME,
+            ),
+            mcp=mcp_manager,
+        )
+        await InteractiveRunner(input_adapter, output, OperationController()).run(
+            agent, commands, command_context
+        )
+        return 0
+    finally:
+        await mcp_manager.close()

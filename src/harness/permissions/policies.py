@@ -35,3 +35,22 @@ class AlwaysDeny:
 class AlwaysAllow:
     async def decide(self, tool: ToolDefinition, arguments: dict[str, Any]) -> PermissionDecision:
         return PermissionDecision.ALLOW
+
+
+class RoutedPermissionPolicy:
+    """Apply an alternate policy to tools whose names start with a prefix."""
+
+    def __init__(
+        self,
+        default: PermissionPolicy,
+        overrides: dict[str, PermissionPolicy],
+    ) -> None:
+        self.default = default
+        self.overrides = overrides
+
+    async def decide(self, tool: ToolDefinition, arguments: dict[str, Any]) -> PermissionDecision:
+        policy = next(
+            (policy for prefix, policy in self.overrides.items() if tool.name.startswith(prefix)),
+            self.default,
+        )
+        return await policy.decide(tool, arguments)

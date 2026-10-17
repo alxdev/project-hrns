@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
+from dataclasses import replace
 from datetime import datetime
 from uuid import uuid4
 
 from harness.agent import Agent
 from harness.agent.loop import EventSink, SubagentLifecycleEvent
+from harness.tools.base import Tool
 
 from .base import Subagent
 from .models import SubagentProfile, SubagentRecord, SubagentStatus
 
 AgentFactory = Callable[[SubagentProfile], Agent]
+ToolLoader = Callable[[str], Awaitable[Iterable[Tool]]]
 
 
 class ProfileSubagent:
@@ -42,6 +45,7 @@ class SubagentManager:
         profiles: Mapping[str, SubagentProfile],
         max_active: int = 4,
         events: EventSink | None = None,
+        tool_loader: ToolLoader | None = None,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active must be at least 1")
@@ -49,6 +53,7 @@ class SubagentManager:
         self.profiles = dict(profiles)
         self.max_active = max_active
         self.events = events
+        self.tool_loader = tool_loader
         self._agents: dict[str, Agent] = {}
         self._records: list[SubagentRecord] = []
 
@@ -71,19 +76,29 @@ class SubagentManager:
         if len(self.active()) >= self.max_active:
             raise RuntimeError(f"maximum active subagents reached ({self.max_active})")
 
-        if profile.reuse:
-            agent = self._agents.get(profile.name)
-            if agent is None:
-                agent = self.factory(profile)
-                self._agents[profile.name] = agent
-        else:
-            agent = self.factory(profile)
-
         record = SubagentRecord(id=uuid4().hex[:8], profile=profile.name, prompt=prompt)
         self._records.append(record)
         started = time.monotonic()
         await self._emit(SubagentLifecycleEvent(profile.name, record.id, "started"))
         try:
+            discovered_tools = await self.tool_loader(profile.name) if self.tool_loader else ()
+            effective_profile = replace(profile, tools=(*profile.tools, *discovered_tools))
+
+            if profile.reuse:
+                agent = self._agents.get(profile.name)
+                if agent is None:
+                    agent = self.factory(effective_profile)
+                    self._agents[profile.name] = agent
+                else:
+                    for tool in discovered_tools:
+                        if not any(
+                            definition.name == tool.definition.name
+                            for definition in agent.tools.definitions()
+                        ):
+                            agent.tools.register(tool)
+            else:
+                agent = self.factory(effective_profile)
+
             record.result = await agent.send(prompt)
             record.status = SubagentStatus.COMPLETED
             return record
@@ -115,6 +130,14 @@ class SubagentManager:
 
     def records(self) -> list[SubagentRecord]:
         return list(self._records)
+
+    def unregister_tools(self, name_prefix: str) -> int:
+        removed = 0
+        for agent in self._agents.values():
+            for definition in agent.tools.definitions():
+                if definition.name.startswith(name_prefix):
+                    removed += agent.tools.unregister(definition.name) is not None
+        return removed
 
     def describe(self) -> str:
         lines = ["Subagents"]

@@ -15,6 +15,7 @@ class CommandContext:
     subagents: Any = None
     transcript: Any = None
     runtime_info: Callable[[], str] | None = None
+    mcp: Any = None
 
 
 @dataclass(frozen=True)

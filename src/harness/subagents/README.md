@@ -54,3 +54,13 @@ setting as the root agent.
 
 Consequently, file changes and shell commands must be performed by the `coder`
 subagent, even when the task is initiated interactively by the root agent.
+
+## MCP tools
+
+MCP servers can be assigned to one profile or made global with `/mcp add`.
+Profile-scoped tools are discovered synchronously before the profile's first
+agent loop, then cached for the session. Global tools are discovered before the
+root agent's first loop and are also included for subagents. Discovery activity
+is emitted through the generic event sink; the UI shows the current server and
+logs the resulting tool count or the server's error. MCP tools use the same
+registry, permission policy, and cancellation path as built-in tools.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -94,6 +95,15 @@ class SubagentLifecycleEvent:
     elapsed_seconds: float | None = None
 
 
+@dataclass(frozen=True)
+class MCPDiscoveryEvent:
+    profile: str
+    server: str
+    phase: str
+    tool_count: int = 0
+    error: str = ""
+
+
 @dataclass
 class Agent:
     provider: Provider
@@ -109,10 +119,14 @@ class Agent:
     log_prefix: str = ""
     quiet: bool = False
     streaming: bool = True
+    before_send: Callable[[], Awaitable[None]] | None = None
 
     async def send(self, prompt: str) -> str:
+        if self.before_send is not None:
+            await self.before_send()
         self.messages.append(UserMessage(prompt))
-        await self.events.emit(UserMessageEvent(prompt, self.name))
+        if not self.quiet:
+            await self.events.emit(UserMessageEvent(prompt, self.name))
         final_text = ""
         for _ in range(self.max_turns):
             if self.compaction is not None:

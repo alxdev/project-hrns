@@ -27,6 +27,9 @@ class TerminalUI:
             self._render_tool(entry, event.is_new)
         elif entry.kind == "subagent":
             self._render_subagent(entry, event.is_new)
+        elif entry.kind == "mcp_discovery" and not event.is_new:
+            label = "error" if entry.status == "failed" else "info"
+            print(f"[{label}] {entry.content}")
 
     def _render_assistant(self, entry: TranscriptEntry, is_new: bool) -> None:
         if entry.status == "streaming":
