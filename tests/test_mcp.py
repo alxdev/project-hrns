@@ -8,6 +8,7 @@ from harness.mcp import MCPConfigStore, MCPServerConfig, MCPToolManager
 from harness.provider import MockProvider
 from harness.subagents import SubagentManager, build_default_profiles
 from harness.tools.base import ToolContext
+from harness.tools.read_file import ReadFileTool
 from harness.tools.registry import ToolRegistry
 from harness.transcript import Transcript
 
@@ -186,6 +187,36 @@ async def test_subagent_discovers_tools_before_agent_factory():
     await manager.delegate("explorer", "research")
 
     assert order == ["discover:explorer", "factory"]
+
+
+def test_tools_and_agents_commands_show_scoped_mcp_tools_and_descriptions():
+    profiles = build_default_profiles([ReadFileTool()])
+    subagents = SubagentManager(lambda _profile: None, profiles)
+
+    class MCPView:
+        def cached_tools_for(self, profile):
+            return (FakeTool(),) if profile == "explorer" else ()
+
+        def discovery_status(self, profile):
+            return [("docs", "loaded (1 tools)")] if profile == "explorer" else []
+
+    context = CommandContext(
+        agent=object(),
+        provider=MockProvider(),
+        tools=ToolRegistry(),
+        subagents=subagents,
+        mcp=MCPView(),
+    )
+    commands = build_default_commands()
+    tools_result = commands.dispatch("/tools", context)
+    agents_result = commands.dispatch("/agents", context)
+
+    assert tools_result is not None
+    assert "mcp_docs_search — Search" in tools_result.text
+    assert "MCP docs: loaded (1 tools)" in tools_result.text
+    assert agents_result is not None
+    assert "agent_explorer — Investigate the codebase" in agents_result.text
+    assert "tools: read_file, mcp_docs_search" in agents_result.text
 
 
 class FakeTool:

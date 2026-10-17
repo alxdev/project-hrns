@@ -55,6 +55,7 @@ class SubagentManager:
         self.events = events
         self.tool_loader = tool_loader
         self._agents: dict[str, Agent] = {}
+        self._discovered_tools: dict[str, tuple[Tool, ...]] = {}
         self._records: list[SubagentRecord] = []
 
     def get(self, profile_name: str) -> Subagent:
@@ -82,6 +83,7 @@ class SubagentManager:
         await self._emit(SubagentLifecycleEvent(profile.name, record.id, "started"))
         try:
             discovered_tools = await self.tool_loader(profile.name) if self.tool_loader else ()
+            self._discovered_tools[profile.name] = tuple(discovered_tools)
             effective_profile = replace(profile, tools=(*profile.tools, *discovered_tools))
 
             if profile.reuse:
@@ -131,6 +133,15 @@ class SubagentManager:
     def records(self) -> list[SubagentRecord]:
         return list(self._records)
 
+    def tools_for_profile(self, profile_name: str) -> tuple[Tool, ...]:
+        profile = self.profiles.get(profile_name)
+        if profile is None:
+            return ()
+        tools: dict[str, Tool] = {}
+        for tool in (*profile.tools, *self._discovered_tools.get(profile_name, ())):
+            tools.setdefault(tool.definition.name, tool)
+        return tuple(tools.values())
+
     def unregister_tools(self, name_prefix: str) -> int:
         removed = 0
         for agent in self._agents.values():
@@ -139,9 +150,21 @@ class SubagentManager:
                     removed += agent.tools.unregister(definition.name) is not None
         return removed
 
-    def describe(self) -> str:
-        lines = ["Subagents"]
-        lines.append(f"  profiles: {', '.join(sorted(self.profiles)) or 'none'}")
+    def describe(self, extra_tools: Callable[[str], Iterable[Tool]] | None = None) -> str:
+        lines = ["Agents"]
+        if self.profiles:
+            for name, profile in sorted(self.profiles.items()):
+                tools = list(self.tools_for_profile(name))
+                if extra_tools is not None:
+                    known = {tool.definition.name for tool in tools}
+                    for tool in extra_tools(name):
+                        if tool.definition.name not in known:
+                            tools.append(tool)
+                            known.add(tool.definition.name)
+                tool_names = ", ".join(tool.definition.name for tool in tools) or "none"
+                lines.append(f"  agent_{name} — {profile.description} — tools: {tool_names}")
+        else:
+            lines.append("  profiles: none")
         lines.append(f"  active: {len(self.active())}/{self.max_active}")
         if self._records:
             for record in self._records[-5:]:

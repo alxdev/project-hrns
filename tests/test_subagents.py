@@ -35,6 +35,16 @@ def test_profiles_have_curated_tools():
     }
 
 
+def test_agent_description_lists_profile_summary_and_tools():
+    manager = SubagentManager(lambda _profile: FakeAgent(), build_default_profiles([]))
+
+    description = manager.describe()
+
+    assert "agent_explorer — Investigate the codebase" in description
+    assert "agent_coder — Implement a focused coding task" in description
+    assert "tools: none" in description
+
+
 async def test_manager_reuses_agent_and_tracks_records():
     created: list[FakeAgent] = []
 

@@ -27,6 +27,7 @@ class MCPToolManager:
         self._clients: list[Any] = []
         self._client_factory: Any = None
         self._tools_by_scope: dict[str, tuple[Tool, ...]] = {}
+        self._server_errors: dict[tuple[str, str], str] = {}
 
     def registered_servers(self) -> list[MCPServerConfig]:
         return self.store.load()
@@ -39,6 +40,40 @@ class MCPToolManager:
         removed = self.store.remove(name)
         self._tools_by_scope.clear()
         return removed
+
+    def cached_tools_for(self, profile: str) -> tuple[Tool, ...]:
+        try:
+            servers = [server for server in self.store.load() if server.applies_to(profile)]
+        except ValueError:
+            return ()
+        tools: dict[str, Tool] = {}
+        for server in servers:
+            task = self._load_tasks.get((server.name, server.url))
+            if task is None or not task.done() or task.cancelled() or task.exception() is not None:
+                continue
+            for tool in task.result():
+                tools.setdefault(tool.definition.name, tool)
+        return tuple(tools.values())
+
+    def discovery_status(self, profile: str) -> list[tuple[str, str]]:
+        try:
+            servers = [server for server in self.store.load() if server.applies_to(profile)]
+        except ValueError as exc:
+            return [("mcp.json", f"configuration error: {exc}")]
+        statuses: list[tuple[str, str]] = []
+        for server in servers:
+            key = (server.name, server.url)
+            task = self._load_tasks.get(key)
+            if task is None or not task.done():
+                status = "not discovered yet"
+            elif task.cancelled():
+                status = "discovery cancelled"
+            elif key in self._server_errors:
+                status = f"discovery failed: {self._server_errors[key]}"
+            else:
+                status = f"loaded ({len(task.result())} tools)"
+            statuses.append((server.name, status))
+        return statuses
 
     async def tools_for(self, profile: str) -> tuple[Tool, ...]:
         cached = self._tools_by_scope.get(profile)
@@ -98,6 +133,7 @@ class MCPToolManager:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            self._server_errors[(server.name, server.url)] = str(exc)
             await self.events.emit(MCPDiscoveryEvent(profile, label, "failed", error=str(exc)))
             return ()
 

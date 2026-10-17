@@ -14,6 +14,7 @@ def build_default_commands() -> CommandRegistry:
     registry.register("clear", "Clear the conversation history.", _clear)
     registry.register("tools", "List registered tools.", _tools)
     registry.register("subagents", "Show subagent profiles and activity.", _subagents)
+    registry.register("agents", "List agents, descriptions, and available tools.", _subagents)
     registry.register(
         "mcp",
         "Register MCP tools for one subagent or all subagents.",
@@ -67,14 +68,45 @@ def _clear(_args: str, context: CommandContext) -> CommandResult:
 
 
 def _tools(_args: str, context: CommandContext) -> CommandResult:
-    names = [definition.name for definition in context.tools.definitions()]
-    return CommandResult("\n".join(names) if names else "no tools registered")
+    lines = ["root tools:"]
+    root_definitions = context.tools.definitions()
+    if root_definitions:
+        lines.extend(f"  {item.name} — {item.description}" for item in root_definitions)
+    else:
+        lines.append("  none")
+    if context.mcp is not None:
+        lines.extend(
+            f"  MCP {server}: {status}" for server, status in context.mcp.discovery_status("root")
+        )
+
+    if context.subagents is not None:
+        for name in sorted(context.subagents.profiles):
+            lines.append(f"agent_{name} tools:")
+            tools = list(context.subagents.tools_for_profile(name))
+            if context.mcp is not None:
+                known = {tool.definition.name for tool in tools}
+                tools.extend(
+                    tool
+                    for tool in context.mcp.cached_tools_for(name)
+                    if tool.definition.name not in known
+                )
+            if tools:
+                lines.extend(
+                    f"  {tool.definition.name} — {tool.definition.description}" for tool in tools
+                )
+            else:
+                lines.append("  none")
+            if context.mcp is not None:
+                for server, status in context.mcp.discovery_status(name):
+                    lines.append(f"  MCP {server}: {status}")
+    return CommandResult("\n".join(lines))
 
 
 def _subagents(_args: str, context: CommandContext) -> CommandResult:
     if context.subagents is None:
         return CommandResult("subagents are unavailable")
-    return CommandResult(context.subagents.describe())
+    extra_tools = context.mcp.cached_tools_for if context.mcp is not None else None
+    return CommandResult(context.subagents.describe(extra_tools))
 
 
 def _mcp(args: str, context: CommandContext) -> CommandResult:
