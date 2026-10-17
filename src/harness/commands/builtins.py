@@ -13,8 +13,7 @@ def build_default_commands() -> CommandRegistry:
     registry.register("model", "Show or change the current model.", _model, "/model [name]")
     registry.register("clear", "Clear the conversation history.", _clear)
     registry.register("tools", "List registered tools.", _tools)
-    registry.register("subagents", "Show subagent profiles and activity.", _subagents)
-    registry.register("agents", "List agents, descriptions, and available tools.", _subagents)
+    registry.register("agents", "List agents, descriptions, and available tools.", _agents)
     registry.register(
         "mcp",
         "Register MCP tools for one subagent or all subagents.",
@@ -102,11 +101,21 @@ def _tools(_args: str, context: CommandContext) -> CommandResult:
     return CommandResult("\n".join(lines))
 
 
-def _subagents(_args: str, context: CommandContext) -> CommandResult:
+def _agents(_args: str, context: CommandContext) -> CommandResult:
     if context.subagents is None:
         return CommandResult("subagents are unavailable")
     extra_tools = context.mcp.cached_tools_for if context.mcp is not None else None
-    return CommandResult(context.subagents.describe(extra_tools))
+    lines = ["Agents"]
+    root_tool_names = (
+        ", ".join(definition.name for definition in context.tools.definitions()) or "none"
+    )
+    lines.append(
+        "  agent_root — Coordinates requests and delegates focused work to specialized agents. "
+        f"— tools: {root_tool_names}"
+    )
+    subagent_summary = context.subagents.describe(extra_tools).splitlines()
+    lines.extend(subagent_summary[1:])
+    return CommandResult("\n".join(lines))
 
 
 def _mcp(args: str, context: CommandContext) -> CommandResult:

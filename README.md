@@ -64,7 +64,7 @@ Phase 5 adds an independent subagent layer:
 - Profile-specific `delegate_explorer` and `delegate_coder` tools
 - Active and completed subagent tracking
 - Isolated agent state, system prompts, permission modes, and lifecycle events
-- `/subagents` for viewing profiles and delegation activity
+- `/agents` for viewing agent descriptions, available tools, and delegation activity
 
 The root agent uses strict delegation. Its tool registry contains only
 `delegate_explorer` and `delegate_coder`; it does not receive the base
@@ -165,7 +165,7 @@ agent receives only profile-specific delegation tools while each subagent gets i
 own isolated agent instance, system prompt, permission mode, and curated
 `ToolRegistry`.
 
-Use `/subagents` interactively to inspect available profiles and delegation
+Use `/agents` interactively to inspect agent descriptions, available tools, and delegation
 status. The main agent can delegate through `delegate_explorer` or
 `delegate_coder`.
 

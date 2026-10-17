@@ -35,7 +35,8 @@ Subagent lifecycle events are emitted through the generic event sink, allowing
 different UIs to show or ignore start, completion, and elapsed-time messages.
 
 `SubagentManager.describe()` reports configured profiles, active work, and the
-latest delegation records. The interactive `/subagents` command displays it.
+latest delegation records. The interactive `/agents` command displays them alongside
+the root and subagent descriptions and their available tools.
 
 ## Tool ownership
 
