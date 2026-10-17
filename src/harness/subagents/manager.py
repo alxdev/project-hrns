@@ -150,8 +150,12 @@ class SubagentManager:
                     removed += agent.tools.unregister(definition.name) is not None
         return removed
 
-    def describe(self, extra_tools: Callable[[str], Iterable[Tool]] | None = None) -> str:
-        lines = ["Agents"]
+    def describe(
+        self,
+        extra_tools: Callable[[str], Iterable[Tool]] | None = None,
+        leading_agents: Iterable[str] = (),
+    ) -> str:
+        agent_entries = list(leading_agents)
         if self.profiles:
             for name, profile in sorted(self.profiles.items()):
                 tools = list(self.tools_for_profile(name))
@@ -162,13 +166,18 @@ class SubagentManager:
                             tools.append(tool)
                             known.add(tool.definition.name)
                 tool_names = ", ".join(tool.definition.name for tool in tools) or "none"
-                lines.append(f"  agent_{name} — {profile.description} — tools: {tool_names}")
+                agent_entries.append(
+                    f"  agent_{name} — {profile.description} — tools: {tool_names}"
+                )
         else:
-            lines.append("  profiles: none")
-        lines.append(f"  active: {len(self.active())}/{self.max_active}")
+            agent_entries.append("  profiles: none")
+        sections = ["Agents", *agent_entries, f"active: {len(self.active())}/{self.max_active}"]
         if self._records:
-            for record in self._records[-5:]:
-                lines.append(f"  {record.id} · {record.profile} · {record.status.value}")
+            history = [
+                f"  {record.id} · {record.profile} · {record.status.value}"
+                for record in self._records[-5:]
+            ]
+            sections.append("Recent delegations\n" + "\n\n".join(history))
         else:
-            lines.append("  history: none")
-        return "\n".join(lines)
+            sections.append("Recent delegations\n  none")
+        return "\n\n".join(sections)

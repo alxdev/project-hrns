@@ -67,20 +67,17 @@ def _clear(_args: str, context: CommandContext) -> CommandResult:
 
 
 def _tools(_args: str, context: CommandContext) -> CommandResult:
-    lines = ["root tools:"]
+    sections: list[str] = []
     root_definitions = context.tools.definitions()
-    if root_definitions:
-        lines.extend(f"  {item.name} — {item.description}" for item in root_definitions)
-    else:
-        lines.append("  none")
+    root_entries = [f"  {item.name} — {item.description}" for item in root_definitions]
     if context.mcp is not None:
-        lines.extend(
+        root_entries.extend(
             f"  MCP {server}: {status}" for server, status in context.mcp.discovery_status("root")
         )
+    sections.append("root tools:\n\n" + "\n\n".join(root_entries or ["  none"]))
 
     if context.subagents is not None:
         for name in sorted(context.subagents.profiles):
-            lines.append(f"agent_{name} tools:")
             tools = list(context.subagents.tools_for_profile(name))
             if context.mcp is not None:
                 known = {tool.definition.name for tool in tools}
@@ -89,33 +86,30 @@ def _tools(_args: str, context: CommandContext) -> CommandResult:
                     for tool in context.mcp.cached_tools_for(name)
                     if tool.definition.name not in known
                 )
-            if tools:
-                lines.extend(
-                    f"  {tool.definition.name} — {tool.definition.description}" for tool in tools
-                )
-            else:
-                lines.append("  none")
+            entries = [
+                f"  {tool.definition.name} — {tool.definition.description}" for tool in tools
+            ]
             if context.mcp is not None:
-                for server, status in context.mcp.discovery_status(name):
-                    lines.append(f"  MCP {server}: {status}")
-    return CommandResult("\n".join(lines))
+                entries.extend(
+                    f"  MCP {server}: {status}"
+                    for server, status in context.mcp.discovery_status(name)
+                )
+            sections.append(f"agent_{name} tools:\n\n" + "\n\n".join(entries or ["  none"]))
+    return CommandResult("\n\n".join(sections))
 
 
 def _agents(_args: str, context: CommandContext) -> CommandResult:
     if context.subagents is None:
         return CommandResult("subagents are unavailable")
     extra_tools = context.mcp.cached_tools_for if context.mcp is not None else None
-    lines = ["Agents"]
     root_tool_names = (
         ", ".join(definition.name for definition in context.tools.definitions()) or "none"
     )
-    lines.append(
+    root_entry = (
         "  agent_root — Coordinates requests and delegates focused work to specialized agents. "
         f"— tools: {root_tool_names}"
     )
-    subagent_summary = context.subagents.describe(extra_tools).splitlines()
-    lines.extend(subagent_summary[1:])
-    return CommandResult("\n".join(lines))
+    return CommandResult(context.subagents.describe(extra_tools, [root_entry]))
 
 
 def _mcp(args: str, context: CommandContext) -> CommandResult:

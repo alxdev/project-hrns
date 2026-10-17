@@ -214,10 +214,15 @@ def test_tools_and_agents_commands_show_scoped_mcp_tools_and_descriptions():
     assert tools_result is not None
     assert "mcp_docs_search — Search" in tools_result.text
     assert "MCP docs: loaded (1 tools)" in tools_result.text
+    read_file_index = tools_result.text.index("read_file —")
+    mcp_tool_index = tools_result.text.index("mcp_docs_search —")
+    assert "\n\n" in tools_result.text[read_file_index:mcp_tool_index]
     assert agents_result is not None
     assert "agent_root — Coordinates requests" in agents_result.text
     assert "agent_explorer — Investigate the codebase" in agents_result.text
     assert "tools: read_file, mcp_docs_search" in agents_result.text
+    assert "agent_root — Coordinates" in agents_result.text
+    assert "\n\n  agent_explorer —" in agents_result.text
 
 
 class FakeTool:
