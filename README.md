@@ -204,10 +204,11 @@ loop. Discovery status is shown in the active UI, and success or server-provided
 failure details are logged. Each configured MCP server connection is closed
 when the harness exits.
 
-Install the optional MCP client dependency with:
+The MCP client is installed with the application dependencies. For an editable
+development install, use:
 
 ```sh
-pip install -e '.[mcp]'
+pip install -e '.[dev]'
 ```
 
 Register a server interactively:

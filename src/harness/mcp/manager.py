@@ -111,8 +111,8 @@ class MCPToolManager:
                 module = cast(Any, importlib.import_module("mcp"))
             except ImportError as exc:
                 raise RuntimeError(
-                    "MCP support requires the optional dependency; install with "
-                    "`pip install -e '.[mcp]'`."
+                    "MCP support requires the MCP SDK; install the application "
+                    "dependencies with `pip install -e .`."
                 ) from exc
             self._client_factory = module.Client
         client = self._client_factory(url)
