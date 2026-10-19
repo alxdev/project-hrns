@@ -235,7 +235,10 @@ and refresh tokens are also kept in memory for the current process.
 OAuth opens a browser and listens on the configured loopback redirect URI. The
 redirect URI must be registered with the OAuth provider and its port must be
 available. The MCP SDK handles OAuth discovery, PKCE, state validation, token
-exchange, and refresh. stdio server launching is not included.
+exchange, and refresh. For compatibility with OAuth servers whose metadata
+differs only by an empty root-path slash, the client permits that exact
+same-origin variation; scheme, host, port, query, fragment, and non-root path
+mismatches remain rejected. stdio server launching is not included.
 
 Examples (set credentials in the environment, or omit these exports and enter
 the values when prompted; never put credential values in `mcp.json`):

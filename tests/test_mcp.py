@@ -11,6 +11,8 @@ from harness.commands import CommandContext, build_default_commands
 from harness.mcp import MCPConfigStore, MCPServerConfig, MCPToolManager
 from harness.mcp.auth import MCPAuthState
 from harness.mcp.config import resolve_auth_headers
+from harness.mcp.oauth_compat import install_root_slash_issuer_compatibility
+from harness.mcp.tools import MCPTool
 from harness.provider import MockProvider
 from harness.subagents import SubagentManager, build_default_profiles
 from harness.subagents.tools import DelegationTool
@@ -106,6 +108,45 @@ async def test_mcp_auth_secret_is_prompted_once_and_remains_session_only(monkeyp
     assert prompts == ["SESSION_MCP_SECRET"]
     assert "SESSION_MCP_SECRET" not in os.environ
     assert state.secrets == {"SESSION_MCP_SECRET": "private-value"}
+
+
+def test_oauth_issuer_compatibility_only_accepts_root_trailing_slash():
+    from mcp.client.auth import oauth2
+
+    install_root_slash_issuer_compatibility()
+    metadata = SimpleNamespace(issuer="https://accounts.google.com")
+
+    oauth2.validate_metadata_issuer(metadata, "https://accounts.google.com/")
+    with pytest.raises(Exception, match="issuer mismatch"):
+        oauth2.validate_metadata_issuer(metadata, "https://accounts.example.com/")
+    with pytest.raises(Exception, match="issuer mismatch"):
+        oauth2.validate_metadata_issuer(metadata, "https://accounts.google.com/oauth")
+
+
+async def test_mcp_tool_reports_leaf_error_from_oauth_exception_group():
+    class FailedClient:
+        async def __aenter__(self):
+            raise ExceptionGroup(
+                "unhandled errors in a TaskGroup",
+                [ValueError("Authorization server metadata issuer mismatch")],
+            )
+
+        async def __aexit__(self, *_args):
+            return False
+
+    tool = MCPTool(
+        lambda _url: FailedClient(),
+        "https://gmailmcp.googleapis.com/mcp/v1",
+        "gmail",
+        "search_threads",
+        ToolDefinition("mcp_gmail_search_threads", "Search", {"type": "object"}),
+    )
+
+    result = await tool.execute(ToolContext(Path.cwd()), {})
+
+    assert result.is_error
+    assert "Authorization server metadata issuer mismatch" in result.content
+    assert "unhandled errors in a TaskGroup" not in result.content
 
 
 def test_mcp_auth_config_requires_environment_variable_name(tmp_path: Path):

@@ -11,6 +11,7 @@ from typing import Any, Literal, cast
 from urllib.parse import parse_qs, urlparse
 
 from .config import resolve_auth_headers
+from .oauth_compat import install_root_slash_issuer_compatibility
 
 
 class MCPAuthState:
@@ -84,6 +85,7 @@ async def authenticated_client(
     if auth.get("type") != "oauth":
         raise ValueError(f"unsupported MCP authentication type: {auth.get('type')}")
 
+    install_root_slash_issuer_compatibility()
     async with _oauth_provider(url, auth, state) as oauth_provider:
         async with httpx2.AsyncClient(auth=oauth_provider) as http_client:
             transport = streamable_http_client(url, http_client=http_client)

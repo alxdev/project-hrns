@@ -20,8 +20,12 @@ class MCPTool:
 
     async def execute(self, context: ToolContext, arguments: dict[str, Any]) -> ToolResult:
         del context
-        async with self.client_factory(self.url) as client:
-            result = await client.call_tool(self.remote_name, arguments)
+        try:
+            async with self.client_factory(self.url) as client:
+                result = await client.call_tool(self.remote_name, arguments)
+        except Exception as exc:
+            details = _exception_details(exc)
+            return ToolResult(self.definition.name, f"MCP request failed: {details}", is_error=True)
         parts: list[str] = []
         for item in getattr(result, "content", ()) or ():
             text = getattr(item, "text", None)
@@ -40,3 +44,10 @@ class MCPTool:
             content="\n".join(parts),
             is_error=bool(getattr(result, "is_error", False)),
         )
+
+
+def _exception_details(error: Exception) -> str:
+    """Show actionable leaf causes instead of opaque ExceptionGroup summaries."""
+    if isinstance(error, ExceptionGroup):
+        return "; ".join(_exception_details(item) for item in error.exceptions)
+    return str(error) or type(error).__name__
