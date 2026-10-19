@@ -53,5 +53,6 @@ def build_default_profiles(tools: Iterable[Tool]) -> dict[str, SubagentProfile]:
                 "unless the user explicitly asks for that action."
             ),
             permission_mode="inherit",
+            requires_tools=True,
         ),
     }

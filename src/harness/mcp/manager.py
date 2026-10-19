@@ -13,6 +13,10 @@ from .config import MCPConfigStore, MCPServerConfig
 from .tools import MCPTool
 
 
+class MCPDiscoveryError(RuntimeError):
+    """Raised when configured MCP tools cannot be made available to an agent."""
+
+
 class MCPToolManager:
     """Lazily discovers MCP tools and caches their definitions for the session."""
 
@@ -88,8 +92,7 @@ class MCPToolManager:
         except ValueError as exc:
             await self.events.emit(MCPDiscoveryEvent(profile, "mcp.json", "started"))
             await self.events.emit(MCPDiscoveryEvent(profile, "mcp.json", "failed", error=str(exc)))
-            self._tools_by_scope[profile] = ()
-            return ()
+            raise MCPDiscoveryError(f"MCP configuration error for {profile}: {exc}") from exc
         results = await asyncio.gather(*(self._load_once(server, profile) for server in servers))
         unique: dict[str, Tool] = {}
         for group in results:
@@ -149,7 +152,9 @@ class MCPToolManager:
         except Exception as exc:
             self._server_errors[(server.name, server.url)] = str(exc)
             await self.events.emit(MCPDiscoveryEvent(profile, label, "failed", error=str(exc)))
-            return ()
+            raise MCPDiscoveryError(
+                f"failed to load {label} MCP tools for {profile}: {exc}"
+            ) from exc
 
     @staticmethod
     def _display_name(name: str) -> str:

@@ -2,6 +2,8 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from harness.agent.loop import MCPDiscoveryEvent
 from harness.api.types import ToolDefinition
 from harness.commands import CommandContext, build_default_commands
@@ -9,6 +11,7 @@ from harness.mcp import MCPConfigStore, MCPServerConfig, MCPToolManager
 from harness.mcp.config import resolve_auth_headers
 from harness.provider import MockProvider
 from harness.subagents import SubagentManager, build_default_profiles
+from harness.subagents.tools import DelegationTool
 from harness.tools.base import ToolContext
 from harness.tools.read_file import ReadFileTool
 from harness.tools.registry import ToolRegistry
@@ -219,10 +222,61 @@ async def test_mcp_discovery_failure_is_cached_and_reported(tmp_path: Path):
     manager = MCPToolManager(store, events)
     manager._client_factory = FailedClient
 
-    assert await manager.tools_for("coder") == ()
-    assert await manager.tools_for("coder") == ()
+    with pytest.raises(RuntimeError, match="connection timed out"):
+        await manager.tools_for("coder")
+    with pytest.raises(RuntimeError, match="connection timed out"):
+        await manager.tools_for("coder")
     assert attempts == 1
     assert [event.phase for event in events.events] == ["started", "failed"]
+
+
+async def test_missing_oauth_environment_fails_gmail_delegation_before_model_call(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+    store = MCPConfigStore(tmp_path / "mcp.json")
+    store.add(
+        MCPServerConfig(
+            "gmail",
+            "https://gmail.example.com/mcp",
+            "agent",
+            "gmail",
+            auth={
+                "type": "oauth",
+                "client_id_env": "GOOGLE_CLIENT_ID",
+                "client_secret_env": "GOOGLE_CLIENT_SECRET",
+                "redirect_uri": "http://127.0.0.1:8765/callback",
+                "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
+            },
+        )
+    )
+    events = EventCollector()
+    mcp = MCPToolManager(store, events)
+    agent_calls = []
+
+    def factory(_profile):
+        agent_calls.append("factory")
+        raise AssertionError("Gmail agent must not be constructed without its tools")
+
+    subagents = SubagentManager(
+        factory,
+        build_default_profiles([]),
+        tool_loader=mcp.tools_for,
+        events=events,
+    )
+    tool = DelegationTool("gmail", "Use Gmail tools")
+    tool.bind(subagents)
+    result = await tool.execute(ToolContext(tmp_path), {"task": "Read my latest emails"})
+
+    assert result.is_error
+    assert "GOOGLE_CLIENT_ID is not set" in result.content
+    assert agent_calls == []
+    assert subagents.records()[0].status.value == "failed"
+    assert [event.phase for event in events.events if isinstance(event, MCPDiscoveryEvent)] == [
+        "started",
+        "failed",
+    ]
 
 
 def test_transcript_reports_mcp_discovery_activity_and_outcome():

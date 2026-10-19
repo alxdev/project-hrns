@@ -84,6 +84,11 @@ class SubagentManager:
         try:
             discovered_tools = await self.tool_loader(profile.name) if self.tool_loader else ()
             self._discovered_tools[profile.name] = tuple(discovered_tools)
+            if profile.requires_tools and not (*profile.tools, *discovered_tools):
+                raise RuntimeError(
+                    f"subagent '{profile.name}' has no required tools available; "
+                    "refusing to run without its configured capabilities"
+                )
             effective_profile = replace(profile, tools=(*profile.tools, *discovered_tools))
 
             if profile.reuse:
