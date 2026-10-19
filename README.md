@@ -266,6 +266,13 @@ token cache lasts for one process run, so a new run may require authorization
 again depending on the provider. As with all MCP tools, calls remain subject to
 the configured tool-approval policy.
 
+The built-in `gmail` subagent is scoped to the Gmail MCP registration in the
+local `mcp.json`; invoke it through `delegate_gmail`. Google's Gmail MCP is a
+Developer Preview and provides email search/read, labels, and draft creation.
+It does not expose a direct send-email tool, so the subagent can prepare drafts
+for you to review and send in Gmail, but must not claim to have sent a message.
+See [Google's Gmail MCP setup and tool reference](https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server).
+
 ## Development
 
 Install the development dependencies with:
