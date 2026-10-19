@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import getpass
 import os
+import sys
 import webbrowser
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any, Literal, cast
 from urllib.parse import parse_qs, urlparse
@@ -12,9 +14,12 @@ from .config import resolve_auth_headers
 
 
 class MCPAuthState:
-    """Process-local OAuth client and token state shared across MCP connections."""
+    """Process-local secrets, OAuth tokens, and callback state for MCP connections."""
 
-    def __init__(self) -> None:
+    def __init__(self, prompt_secret: Callable[[str], Awaitable[str]] | None = None) -> None:
+        self.prompt_secret = prompt_secret
+        self.secrets: dict[str, str] = {}
+        self._secret_locks: dict[str, asyncio.Lock] = {}
         self.token_storage: Any = None
         self.callback_server: asyncio.Server | None = None
         self.callback_path: str | None = None
@@ -25,6 +30,33 @@ class MCPAuthState:
             self.callback_server.close()
             await self.callback_server.wait_closed()
             self.callback_server = None
+
+    async def secret(self, variable: str) -> str:
+        """Read a configured environment value or prompt once and retain it in memory."""
+        value = os.environ.get(variable) or self.secrets.get(variable)
+        if value:
+            return value
+
+        lock = self._secret_locks.setdefault(variable, asyncio.Lock())
+        async with lock:
+            value = os.environ.get(variable) or self.secrets.get(variable)
+            if value:
+                return value
+            if self.prompt_secret is not None:
+                value = await self.prompt_secret(variable)
+            elif not sys.stdin.isatty() or not sys.stderr.isatty():
+                raise ValueError(
+                    f"required environment variable {variable} is not set; "
+                    "run the harness in an interactive terminal to enter it for this session"
+                )
+            else:
+                value = await asyncio.to_thread(
+                    getpass.getpass, f"Enter {variable} (kept only for this session): "
+                )
+            if not value:
+                raise ValueError(f"no value provided for {variable}")
+            self.secrets[variable] = value
+            return value
 
 
 @asynccontextmanager
@@ -42,7 +74,7 @@ async def authenticated_client(
         ) from exc
 
     if auth is None or auth.get("type") in {"bearer", "headers"}:
-        headers = resolve_auth_headers(auth)
+        headers = await _resolve_auth_headers(auth, state)
         async with httpx2.AsyncClient(headers=headers) as http_client:
             transport = streamable_http_client(url, http_client=http_client)
             async with Client(transport) as client:
@@ -73,17 +105,13 @@ async def _oauth_provider(
     from pydantic import AnyUrl
 
     client_id_name = str(auth["client_id_env"])
-    client_id_value = os.environ.get(client_id_name)
+    client_id_value = await state.secret(client_id_name)
     client_secret_name = auth.get("client_secret_env")
     client_secret_value = (
-        os.environ.get(str(client_secret_name)) if client_secret_name is not None else None
+        await state.secret(str(client_secret_name)) if client_secret_name is not None else None
     )
-    if not client_id_value:
-        raise ValueError(f"required environment variable {client_id_name} is not set")
-    if client_secret_name is not None and not client_secret_value:
-        raise ValueError(f"required environment variable {client_secret_name} is not set")
-    client_id = str(client_id_value)
-    client_secret = str(client_secret_value) if client_secret_value is not None else None
+    client_id = client_id_value
+    client_secret = client_secret_value
     token_auth_method = cast(
         Literal["none", "client_secret_basic", "client_secret_post"],
         str(auth.get("token_auth_method", "client_secret_post" if client_secret else "none")),
@@ -205,3 +233,18 @@ async def _oauth_provider(
         redirect_handler=open_authorization_page,
         callback_handler=wait_for_callback,
     )
+
+
+async def _resolve_auth_headers(
+    auth: dict[str, object] | None, state: MCPAuthState
+) -> dict[str, str]:
+    """Resolve header credentials without exposing prompted values to the model."""
+    if auth is None:
+        return {}
+    if auth["type"] == "bearer":
+        variable = str(auth["token_env"])
+        return {"Authorization": f"Bearer {await state.secret(variable)}"}
+    if auth["type"] == "headers":
+        headers = cast(dict[str, str], auth["headers"])
+        return {header: await state.secret(variable) for header, variable in headers.items()}
+    return resolve_auth_headers(auth)

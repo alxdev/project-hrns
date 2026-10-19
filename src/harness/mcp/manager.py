@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 from urllib.parse import urlparse, urlunparse
 
@@ -24,9 +25,11 @@ class MCPToolManager:
         self,
         store: MCPConfigStore,
         events: EventSink,
+        prompt_secret: Callable[[str], Awaitable[str]] | None = None,
     ) -> None:
         self.store = store
         self.events = events
+        self.prompt_secret = prompt_secret
         self._load_tasks: dict[tuple[str, str], asyncio.Task[tuple[Tool, ...]]] = {}
         self._client_factory: Any = None
         self._auth_states: dict[tuple[str, str], Any] = {}
@@ -171,7 +174,9 @@ class MCPToolManager:
                 "dependencies with `pip install -e .`."
             ) from exc
         state_key = (url, repr(auth))
-        state = self._auth_states.setdefault(state_key, module.MCPAuthState())
+        state = self._auth_states.setdefault(
+            state_key, module.MCPAuthState(prompt_secret=self.prompt_secret)
+        )
         return module.authenticated_client(url, auth, state)
 
     def describe(self) -> str:

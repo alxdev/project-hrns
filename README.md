@@ -227,16 +227,18 @@ agents (including the root agent); otherwise tools are only exposed to the
 named subagent. MCP tools are namespaced as `mcp_<server>_<tool>` and pass
 through the harness's normal permission and cancellation behavior. Streamable
 HTTP connections support unauthenticated endpoints, environment-backed bearer
-tokens or arbitrary headers, and OAuth authorization-code flows. OAuth client
-IDs/secrets are read from environment variables; access and refresh tokens are
-kept in memory for the current process and are not written to `mcp.json` or disk.
+tokens or arbitrary headers, and OAuth authorization-code flows. When a required
+credential environment variable is missing, the harness prompts for it without
+echoing the value and keeps it in memory only for the current process. It is not
+added to the model context, logs, `mcp.json`, or shell configuration. OAuth access
+and refresh tokens are also kept in memory for the current process.
 OAuth opens a browser and listens on the configured loopback redirect URI. The
 redirect URI must be registered with the OAuth provider and its port must be
 available. The MCP SDK handles OAuth discovery, PKCE, state validation, token
 exchange, and refresh. stdio server launching is not included.
 
-Examples (put the credential values in your shell environment or ignored
-`.env`; never put credential values in `mcp.json`):
+Examples (set credentials in the environment, or omit these exports and enter
+the values when prompted; never put credential values in `mcp.json`):
 
 ```sh
 export GOOGLE_CLIENT_ID='your-client-id'

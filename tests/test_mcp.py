@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,6 +9,7 @@ from harness.agent.loop import MCPDiscoveryEvent
 from harness.api.types import ToolDefinition
 from harness.commands import CommandContext, build_default_commands
 from harness.mcp import MCPConfigStore, MCPServerConfig, MCPToolManager
+from harness.mcp.auth import MCPAuthState
 from harness.mcp.config import resolve_auth_headers
 from harness.provider import MockProvider
 from harness.subagents import SubagentManager, build_default_profiles
@@ -87,6 +89,23 @@ def test_mcp_custom_headers_resolve_environment_values(monkeypatch):
     assert resolve_auth_headers({"type": "headers", "headers": {"X-API-Key": "TEST_MCP_KEY"}}) == {
         "X-API-Key": "secret-value"
     }
+
+
+async def test_mcp_auth_secret_is_prompted_once_and_remains_session_only(monkeypatch):
+    monkeypatch.delenv("SESSION_MCP_SECRET", raising=False)
+    prompts = []
+
+    async def prompt(variable):
+        prompts.append(variable)
+        return "private-value"
+
+    state = MCPAuthState(prompt_secret=prompt)
+
+    assert await state.secret("SESSION_MCP_SECRET") == "private-value"
+    assert await state.secret("SESSION_MCP_SECRET") == "private-value"
+    assert prompts == ["SESSION_MCP_SECRET"]
+    assert "SESSION_MCP_SECRET" not in os.environ
+    assert state.secrets == {"SESSION_MCP_SECRET": "private-value"}
 
 
 def test_mcp_auth_config_requires_environment_variable_name(tmp_path: Path):

@@ -50,6 +50,7 @@ async def main(argv: list[str] | None = None) -> int:
     permissions: Any
     root_permissions: Any
     input_adapter: Any
+    output: Any = None
 
     if config.non_interactive:
         events = TranscriptEventSink(transcript, NullEventSink())
@@ -74,7 +75,21 @@ async def main(argv: list[str] | None = None) -> int:
 
     base_tools: list[Tool] = [ReadFileTool(), WriteFileTool(), BashTool()]
     profiles = build_default_profiles(base_tools)
-    mcp_manager = MCPToolManager(MCPConfigStore(config.working_directory / "mcp.json"), events)
+
+    async def prompt_mcp_secret(variable: str) -> str:
+        if input_adapter is None or output is None:
+            raise ValueError(
+                f"missing credential for {variable}; provide it through the environment "
+                "when running non-interactively"
+            )
+        with output.suspend():
+            return await input_adapter.prompt_secret(variable)
+
+    mcp_manager = MCPToolManager(
+        MCPConfigStore(config.working_directory / "mcp.json"),
+        events,
+        prompt_secret=prompt_mcp_secret if input_adapter is not None else None,
+    )
     context = ToolContext(config.working_directory)
 
     def create_subagent(profile: SubagentProfile) -> Agent:

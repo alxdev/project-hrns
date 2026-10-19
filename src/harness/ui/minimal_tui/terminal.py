@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import getpass
 import json
 import sys
 from collections.abc import Iterator
@@ -76,6 +77,11 @@ class TerminalUI:
             f"Approve {tool.name} {json.dumps(arguments, sort_keys=True)}? [y/N] ",
         )
         return answer.strip().lower() in {"y", "yes"}
+
+    async def prompt_secret(self, variable: str) -> str:
+        return await asyncio.to_thread(
+            getpass.getpass, f"Enter {variable} (kept only for this session): "
+        )
 
     async def read(self) -> str:
         return await asyncio.to_thread(input, "❯ ")
