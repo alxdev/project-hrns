@@ -25,6 +25,7 @@ class MCPToolManager:
         self.events = events
         self._load_tasks: dict[tuple[str, str], asyncio.Task[tuple[Tool, ...]]] = {}
         self._client_factory: Any = None
+        self._auth_states: dict[tuple[str, str], Any] = {}
         self._tools_by_scope: dict[str, tuple[Tool, ...]] = {}
         self._server_errors: dict[tuple[str, str], str] = {}
 
@@ -39,6 +40,10 @@ class MCPToolManager:
         removed = self.store.remove(name)
         self._tools_by_scope.clear()
         return removed
+
+    async def close(self) -> None:
+        for state in self._auth_states.values():
+            await state.close()
 
     def cached_tools_for(self, profile: str) -> tuple[Tool, ...]:
         try:
@@ -106,7 +111,7 @@ class MCPToolManager:
         label = self._display_name(server.name)
         await self.events.emit(MCPDiscoveryEvent(profile, label, "started"))
         try:
-            async with self._client_factory_for(server.url) as client:
+            async with self._client_factory_for(server.url, server.auth) as client:
                 response = await client.list_tools()
                 remote_tools = getattr(response, "tools", ())
                 adapted: list[Tool] = []
@@ -128,7 +133,7 @@ class MCPToolManager:
                     definition = ToolDefinition(tool_name, description, schema)
                     adapted.append(
                         MCPTool(
-                            self._client_factory_for,
+                            lambda tool_url: self._client_factory_for(tool_url, server.auth),
                             server.url,
                             server.name,
                             remote_name,
@@ -150,17 +155,19 @@ class MCPToolManager:
     def _display_name(name: str) -> str:
         return name.replace("_", " ").replace("-", " ").title()
 
-    def _client_factory_for(self, url: str) -> Any:
-        if self._client_factory is None:
-            try:
-                module = cast(Any, importlib.import_module("mcp"))
-            except ImportError as exc:
-                raise RuntimeError(
-                    "MCP support requires the MCP SDK; install the application "
-                    "dependencies with `pip install -e .`."
-                ) from exc
-            self._client_factory = module.Client
-        return self._client_factory(url)
+    def _client_factory_for(self, url: str, auth: dict[str, object] | None = None) -> Any:
+        if self._client_factory is not None:
+            return self._client_factory(url)
+        try:
+            module = cast(Any, importlib.import_module("harness.mcp.auth"))
+        except ImportError as exc:
+            raise RuntimeError(
+                "MCP support requires the MCP SDK; install the application "
+                "dependencies with `pip install -e .`."
+            ) from exc
+        state_key = (url, repr(auth))
+        state = self._auth_states.setdefault(state_key, module.MCPAuthState())
+        return module.authenticated_client(url, auth, state)
 
     def describe(self) -> str:
         try:
@@ -172,6 +179,7 @@ class MCPToolManager:
         return "\n".join(
             f"{server.name} · {self._safe_url(server.url)} · "
             f"{'all agents' if server.scope == 'global' else f'subagent {server.agent}'}"
+            f" · auth: {server.auth.get('type', 'none') if server.auth else 'none'}"
             for server in servers
         )
 

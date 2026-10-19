@@ -195,7 +195,8 @@ with what was added and how to run it.
 
 MCP tools are discovered lazily from configured Streamable
 HTTP endpoints. The project-local `mcp.json` stores endpoint names, URLs, and
-scope; tool definitions are fetched from the MCP endpoint on first use and
+scope, plus non-secret authentication settings; credentials are resolved from
+environment variables. Tool definitions are fetched from the MCP endpoint on first use and
 cached for the rest of the process. A server can be scoped to one subagent or
 registered with `--global` for all agents, including the root agent. Global
 tools are still discovered only when the root agent first receives a prompt;
@@ -224,9 +225,46 @@ Register a server interactively:
 `--agent` and `--global` are mutually exclusive. Global means all configured
 agents (including the root agent); otherwise tools are only exposed to the
 named subagent. MCP tools are namespaced as `mcp_<server>_<tool>` and pass
-through the harness's normal permission and cancellation behavior. The first
-implementation supports URL-based Streamable HTTP servers; authentication
-options and stdio server launching are not included.
+through the harness's normal permission and cancellation behavior. Streamable
+HTTP connections support unauthenticated endpoints, environment-backed bearer
+tokens or arbitrary headers, and OAuth authorization-code flows. OAuth client
+IDs/secrets are read from environment variables; access and refresh tokens are
+kept in memory for the current process and are not written to `mcp.json` or disk.
+OAuth opens a browser and listens on the configured loopback redirect URI. The
+redirect URI must be registered with the OAuth provider and its port must be
+available. The MCP SDK handles OAuth discovery, PKCE, state validation, token
+exchange, and refresh. stdio server launching is not included.
+
+Examples (put the credential values in your shell environment or ignored
+`.env`; never put credential values in `mcp.json`):
+
+```sh
+export GOOGLE_CLIENT_ID='your-client-id'
+export GOOGLE_CLIENT_SECRET='your-client-secret'
+```
+
+```text
+# A bearer-token server
+/mcp add https://example.com/mcp --agent researcher --name docs --auth bearer --token-env EXAMPLE_MCP_TOKEN
+
+# An API key or custom header (the value is read from the named environment variable)
+/mcp add https://example.com/mcp --global --name internal --auth headers --header-env X-API-Key=INTERNAL_MCP_KEY
+
+# Generic OAuth authorization-code server
+/mcp add https://example.com/mcp --agent gmailAgent --name mail --auth oauth --client-id-env GOOGLE_CLIENT_ID --client-secret-env GOOGLE_CLIENT_SECRET --redirect-uri http://127.0.0.1:8765/callback --scopes 'scope.one scope.two'
+```
+
+OAuth supports confidential clients using `client_secret_post` by default; set
+`--token-auth-method client_secret_basic` if the provider requires HTTP Basic
+client authentication, or use `none` for a public PKCE client without a client
+secret.
+
+OAuth configuration is provider-neutral. For any provider, use the redirect URI
+shown in its OAuth application settings and configure matching scopes. No
+provider-specific account setup is performed by the harness. The current OAuth
+token cache lasts for one process run, so a new run may require authorization
+again depending on the provider. As with all MCP tools, calls remain subject to
+the configured tool-approval policy.
 
 ## Development
 

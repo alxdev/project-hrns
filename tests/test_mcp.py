@@ -6,6 +6,7 @@ from harness.agent.loop import MCPDiscoveryEvent
 from harness.api.types import ToolDefinition
 from harness.commands import CommandContext, build_default_commands
 from harness.mcp import MCPConfigStore, MCPServerConfig, MCPToolManager
+from harness.mcp.config import resolve_auth_headers
 from harness.provider import MockProvider
 from harness.subagents import SubagentManager, build_default_profiles
 from harness.tools.base import ToolContext
@@ -66,6 +67,38 @@ def test_config_store_round_trip_and_scope(tmp_path: Path):
     assert store.remove("docs") == 1
 
 
+def test_mcp_auth_config_stores_env_var_names_not_secret_values(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("TEST_MCP_TOKEN", "secret-value")
+    store = MCPConfigStore(tmp_path / "mcp.json")
+    auth = {"type": "bearer", "token_env": "TEST_MCP_TOKEN"}
+    store.add(MCPServerConfig("docs", "https://example.com/mcp", "global", auth=auth))
+
+    assert store.load()[0].auth == auth
+    assert "secret-value" not in store.path.read_text(encoding="utf-8")
+    assert resolve_auth_headers(auth) == {"Authorization": "Bearer secret-value"}
+
+
+def test_mcp_custom_headers_resolve_environment_values(monkeypatch):
+    monkeypatch.setenv("TEST_MCP_KEY", "secret-value")
+
+    assert resolve_auth_headers({"type": "headers", "headers": {"X-API-Key": "TEST_MCP_KEY"}}) == {
+        "X-API-Key": "secret-value"
+    }
+
+
+def test_mcp_auth_config_requires_environment_variable_name(tmp_path: Path):
+    store = MCPConfigStore(tmp_path / "mcp.json")
+
+    try:
+        store.add(
+            MCPServerConfig("docs", "https://example.com/mcp", "global", auth={"type": "bearer"})
+        )
+    except ValueError as exc:
+        assert "token_env" in str(exc)
+    else:
+        raise AssertionError("invalid auth configuration should be rejected")
+
+
 def test_mcp_command_persists_profile_or_global_registration(tmp_path: Path):
     class Subagents:
         profiles = {"explorer": object()}
@@ -98,6 +131,44 @@ def test_mcp_command_persists_profile_or_global_registration(tmp_path: Path):
     assert mcp.registrations == [
         MCPServerConfig("docs", "https://docs.example.com/mcp", "agent", "explorer")
     ]
+
+
+def test_mcp_command_accepts_provider_neutral_oauth_configuration():
+    class Subagents:
+        profiles = {"mail": object()}
+
+    class MCPStub:
+        def __init__(self):
+            self.registrations = []
+
+        def register(self, server):
+            self.registrations.append(server)
+
+    mcp = MCPStub()
+    context = CommandContext(
+        agent=object(),
+        provider=MockProvider(),
+        tools=ToolRegistry(),
+        subagents=Subagents(),
+        mcp=mcp,
+    )
+
+    result = build_default_commands().dispatch(
+        "/mcp add https://mail.example.com/mcp --agent mail --name mail "
+        "--auth oauth --client-id-env MAIL_CLIENT_ID "
+        "--client-secret-env MAIL_CLIENT_SECRET "
+        "--redirect-uri http://127.0.0.1:8765/callback --scopes 'mail.read mail.write'",
+        context,
+    )
+
+    assert result is not None and "registered mail" in result.text
+    assert mcp.registrations[0].auth == {
+        "type": "oauth",
+        "client_id_env": "MAIL_CLIENT_ID",
+        "client_secret_env": "MAIL_CLIENT_SECRET",
+        "redirect_uri": "http://127.0.0.1:8765/callback",
+        "scopes": ["mail.read", "mail.write"],
+    }
 
 
 async def test_mcp_discovery_is_scoped_cached_and_connections_are_task_local(tmp_path: Path):

@@ -20,6 +20,10 @@ def build_default_commands() -> CommandRegistry:
         _mcp,
         (
             "/mcp add <url> (--agent <name>|--global) [--name <alias>] "
+            "[--auth bearer --token-env VAR | --auth headers --header-env NAME=VAR | "
+            "--auth oauth --client-id-env VAR --client-secret-env VAR "
+            "--redirect-uri URI [--scopes 'scope1 scope2'] "
+            "[--token-auth-method none|client_secret_basic|client_secret_post]] "
             "| /mcp list | /mcp remove <name>"
         ),
     )
@@ -138,17 +142,36 @@ def _mcp(args: str, context: CommandContext) -> CommandResult:
             else f"no MCP registration found: {parts[1]}"
         )
     if parts[0] != "add" or len(parts) < 2:
-        return CommandResult("usage: /mcp add <url> (--agent <name>|--global) [--name <alias>]")
+        return CommandResult(
+            "usage: /mcp add <url> (--agent <name>|--global) [--name <alias>] [auth options]"
+        )
 
     url = parts[1]
-    options: dict[str, str | bool] = {}
+    options: dict[str, object] = {"--header-env": []}
     index = 2
     while index < len(parts):
         option = parts[index]
         if option == "--global":
             options[option] = True
             index += 1
-        elif option in {"--agent", "--name"} and index + 1 < len(parts):
+        elif option in {
+            "--agent",
+            "--name",
+            "--auth",
+            "--token-env",
+            "--client-id-env",
+            "--client-secret-env",
+            "--token-auth-method",
+            "--redirect-uri",
+            "--scopes",
+            "--header-env",
+        } and index + 1 < len(parts):
+            if option == "--header-env":
+                cast_headers = options[option]
+                assert isinstance(cast_headers, list)
+                cast_headers.append(parts[index + 1])
+                index += 2
+                continue
             options[option] = parts[index + 1]
             index += 2
         else:
@@ -157,15 +180,42 @@ def _mcp(args: str, context: CommandContext) -> CommandResult:
         return CommandResult("choose exactly one scope: --agent <name> or --global")
     try:
         name = normalize_server_name(str(options.get("--name") or server_name_from_url(url)))
+        auth_type = options.get("--auth")
+        auth: dict[str, object] | None = None
+        if auth_type == "bearer":
+            auth = {"type": "bearer", "token_env": options.get("--token-env")}
+        elif auth_type == "headers":
+            header_env: dict[str, str] = {}
+            header_env_options = options["--header-env"]
+            if not isinstance(header_env_options, list):
+                return CommandResult("--header-env must use HEADER_NAME=ENV_VAR")
+            for pair in header_env_options:
+                header, separator, variable = str(pair).partition("=")
+                if not separator or not header or not variable:
+                    return CommandResult("--header-env must use HEADER_NAME=ENV_VAR")
+                header_env[header] = variable
+            auth = {"type": "headers", "headers": header_env}
+        elif auth_type == "oauth":
+            auth = {
+                "type": "oauth",
+                "client_id_env": options.get("--client-id-env"),
+                "client_secret_env": options.get("--client-secret-env"),
+                "redirect_uri": options.get("--redirect-uri"),
+                "scopes": str(options.get("--scopes", "")).split(),
+            }
+            if options.get("--token-auth-method") is not None:
+                auth["token_auth_method"] = options["--token-auth-method"]
+        elif auth_type is not None:
+            return CommandResult("--auth must be bearer, headers, or oauth")
         if "--agent" in options:
             profile = str(options["--agent"])
             if profile not in context.subagents.profiles:
                 available = ", ".join(sorted(context.subagents.profiles))
                 return CommandResult(f"unknown subagent '{profile}'; available: {available}")
-            server = MCPServerConfig(name, url, "agent", profile)
+            server = MCPServerConfig(name, url, "agent", profile, auth)
             scope = f"subagent {profile}"
         else:
-            server = MCPServerConfig(name, url, "global")
+            server = MCPServerConfig(name, url, "global", auth=auth)
             scope = "all agents"
         context.mcp.register(server)
     except ValueError as exc:
