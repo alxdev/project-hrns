@@ -19,6 +19,9 @@ class ToolRegistry:
             raise ValueError(f"tool already registered: {name}")
         self._tools[name] = tool
 
+    def unregister(self, name: str) -> Tool | None:
+        return self._tools.pop(name, None)
+
     def definitions(self) -> list[ToolDefinition]:
         return [self._tools[name].definition for name in sorted(self._tools)]
 

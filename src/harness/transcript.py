@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from harness.agent.loop import (
     EventSink,
+    MCPDiscoveryEvent,
     SubagentLifecycleEvent,
     TextDeltaEvent,
     TextEvent,
@@ -50,6 +51,7 @@ class Transcript:
         self._entries: list[TranscriptEntry] = []
         self._tool_entries: dict[str, TranscriptEntry] = {}
         self._subagent_entries: dict[str, TranscriptEntry] = {}
+        self._mcp_entries: dict[tuple[str, str], TranscriptEntry] = {}
         self._streaming_assistant_entries: dict[str, TranscriptEntry] = {}
         self.activity: str | None = None
 
@@ -142,6 +144,36 @@ class Transcript:
                     completed_entry.metadata["elapsed_seconds"] = event.elapsed_seconds
                 self.activity = "Thinking..."
                 return completed_entry, False
+        elif isinstance(event, MCPDiscoveryEvent):
+            key = (event.profile, event.server)
+            if event.phase == "started":
+                self.activity = f"{event.profile} is discovering {event.server} MCP tools..."
+                entry = self._append(
+                    "mcp_discovery",
+                    self.activity,
+                    event.profile,
+                    status="running",
+                    metadata={"server": event.server},
+                )
+                self._mcp_entries[key] = entry
+                return entry, True
+            completed_entry = self._mcp_entries.get(key)
+            if completed_entry is not None:
+                if event.phase == "completed":
+                    completed_entry.content = (
+                        f"{event.server} MCP tools loaded ({event.tool_count} tools) "
+                        f"for {event.profile}"
+                    )
+                    completed_entry.status = "completed"
+                else:
+                    completed_entry.content = (
+                        f"Failed to load {event.server} MCP tools for {event.profile}: "
+                        f"{event.error or 'unknown error'}"
+                    )
+                    completed_entry.status = "failed"
+                completed_entry.updated_at = datetime.now()
+            self.activity = "Thinking..."
+            return completed_entry, False
         return None, False
 
     def append_text_delta(self, agent: str, text: str) -> TranscriptEntry:
@@ -176,6 +208,7 @@ class Transcript:
         self._entries.clear()
         self._tool_entries.clear()
         self._subagent_entries.clear()
+        self._mcp_entries.clear()
         self._streaming_assistant_entries.clear()
         self.activity = None
 

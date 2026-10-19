@@ -26,7 +26,12 @@ def test_help_and_unknown_commands_are_handled():
     unknown_result = commands.dispatch("/missing", command_context)
 
     assert "/clear" in help_result.text
+    assert "/agents" in help_result.text
+    assert "/subagents" not in help_result.text
     assert "unknown command" in unknown_result.text
+
+    legacy_command = commands.dispatch("/subagents", command_context)
+    assert legacy_command is not None and "unknown command" in legacy_command.text
 
 
 def test_model_and_clear_commands_mutate_only_their_context():

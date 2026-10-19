@@ -35,6 +35,8 @@ class RichOutput:
             self._render_tool(entry, event.is_new)
         elif entry.kind == "subagent":
             self._render_subagent(entry, event.is_new)
+        elif entry.kind == "mcp_discovery":
+            self._render_mcp_discovery(entry, event.is_new)
 
     def _update_activity(self, activity: str | None) -> None:
         self._activity = activity
@@ -106,6 +108,12 @@ class RichOutput:
         self._print_persistently(
             f"[dim]← {entry.content} {entry.status} ({elapsed_seconds:.1f}s)[/dim]"
         )
+
+    def _render_mcp_discovery(self, entry: TranscriptEntry, is_new: bool) -> None:
+        if is_new:
+            return
+        style = "red" if entry.status == "failed" else "dim"
+        self._print_persistently(f"[{style}]{entry.content}[/{style}]")
 
     def write(self, text: str) -> None:
         self.console.print(text, markup=False)

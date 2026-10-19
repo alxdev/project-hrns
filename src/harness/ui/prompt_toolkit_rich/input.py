@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.history import FileHistory
+from prompt_toolkit.history import DummyHistory, FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from harness.api.types import ToolDefinition
@@ -29,3 +29,10 @@ class PromptToolkitInput:
         with patch_stdout():
             answer = await self.session.prompt_async(prompt)
         return answer.strip().lower() in {"y", "yes"}
+
+    async def prompt_secret(self, variable: str) -> str:
+        with patch_stdout():
+            secret_session: Any = PromptSession(history=DummyHistory())
+            return await secret_session.prompt_async(
+                f"Enter {variable} (kept only for this session): ", is_password=True
+            )

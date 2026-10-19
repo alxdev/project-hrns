@@ -26,6 +26,7 @@ class SubagentProfile:
     max_turns: int = 10
     permission_mode: str = "auto_allow"
     reuse: bool = False
+    requires_tools: bool = False
 
 
 @dataclass

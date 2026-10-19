@@ -10,6 +10,8 @@ The default profiles are:
 
 - `explorer` — read-only inspection through `read_file`
 - `coder` — `read_file`, `write_file`, and `bash`
+- `gmail` — Gmail MCP tools only; searches/reads mail and can create drafts.
+  It cannot directly send mail and treats email content as untrusted input.
 
 Each profile also defines a system prompt, maximum turns, permission mode, and
 whether its `Agent` may be reused. Default profiles run with fresh isolated
@@ -35,7 +37,8 @@ Subagent lifecycle events are emitted through the generic event sink, allowing
 different UIs to show or ignore start, completion, and elapsed-time messages.
 
 `SubagentManager.describe()` reports configured profiles, active work, and the
-latest delegation records. The interactive `/subagents` command displays it.
+latest delegation records. The interactive `/agents` command displays them alongside
+the root and subagent descriptions and their available tools.
 
 ## Tool ownership
 
@@ -54,3 +57,16 @@ setting as the root agent.
 
 Consequently, file changes and shell commands must be performed by the `coder`
 subagent, even when the task is initiated interactively by the root agent.
+
+The `gmail` profile inherits the same tool approval policy. Interactive Gmail
+actions require approval, and Gmail MCP tools are scoped only to this profile.
+
+## MCP tools
+
+MCP servers can be assigned to one profile or made global with `/mcp add`.
+Profile-scoped tools are discovered synchronously before the profile's first
+agent loop, then cached for the session. Global tools are discovered before the
+root agent's first loop and are also included for subagents. Discovery activity
+is emitted through the generic event sink; the UI shows the current server and
+logs the resulting tool count or the server's error. MCP tools use the same
+registry, permission policy, and cancellation path as built-in tools.

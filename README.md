@@ -4,7 +4,7 @@ The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
 changing the agent loop.
 
-## Current status: Phase 5
+## Current status: Phase 7 — MCP tool integration
 
 Phase 1 establishes the smallest useful harness:
 
@@ -64,7 +64,7 @@ Phase 5 adds an independent subagent layer:
 - Profile-specific `delegate_explorer` and `delegate_coder` tools
 - Active and completed subagent tracking
 - Isolated agent state, system prompts, permission modes, and lifecycle events
-- `/subagents` for viewing profiles and delegation activity
+- `/agents` for viewing agent descriptions, available tools, and delegation activity
 
 The root agent uses strict delegation. Its tool registry contains only
 `delegate_explorer` and `delegate_coder`; it does not receive the base
@@ -165,7 +165,7 @@ agent receives only profile-specific delegation tools while each subagent gets i
 own isolated agent instance, system prompt, permission mode, and curated
 `ToolRegistry`.
 
-Use `/subagents` interactively to inspect available profiles and delegation
+Use `/agents` interactively to inspect agent descriptions, available tools, and delegation
 status. The main agent can delegate through `delegate_explorer` or
 `delegate_coder`.
 
@@ -190,6 +190,93 @@ status. The main agent can delegate through `delegate_explorer` or
 
 Each phase should preserve the provider-neutral core and update this README
 with what was added and how to run it.
+
+### Phase 7 — MCP tools for agents
+
+MCP tools are discovered lazily from configured Streamable
+HTTP endpoints. The project-local `mcp.json` stores endpoint names, URLs, and
+scope, plus non-secret authentication settings; credentials are resolved from
+environment variables. Tool definitions are fetched from the MCP endpoint on first use and
+cached for the rest of the process. A server can be scoped to one subagent or
+registered with `--global` for all agents, including the root agent. Global
+tools are still discovered only when the root agent first receives a prompt;
+subagent tools are discovered synchronously before that subagent's first agent
+loop. Discovery status is shown in the active UI, and success or server-provided
+failure details are logged. Connections are opened for discovery and individual
+tool calls, then closed in the same async task that opened them; only the tool
+definitions are cached for the session.
+
+The MCP client is installed with the application dependencies. For an editable
+development install, use:
+
+```sh
+pip install -e '.[dev]'
+```
+
+Register a server interactively:
+
+```text
+/mcp add https://example.com/mcp --agent researcher --name docs
+/mcp add https://example.com/mcp --global --name docs
+/mcp list
+/mcp remove docs
+```
+
+`--agent` and `--global` are mutually exclusive. Global means all configured
+agents (including the root agent); otherwise tools are only exposed to the
+named subagent. MCP tools are namespaced as `mcp_<server>_<tool>` and pass
+through the harness's normal permission and cancellation behavior. Streamable
+HTTP connections support unauthenticated endpoints, environment-backed bearer
+tokens or arbitrary headers, and OAuth authorization-code flows. When a required
+credential environment variable is missing, the harness prompts for it without
+echoing the value and keeps it in memory only for the current process. It is not
+added to the model context, logs, `mcp.json`, or shell configuration. OAuth access
+and refresh tokens are also kept in memory for the current process.
+OAuth opens a browser and listens on the configured loopback redirect URI. The
+redirect URI must be registered with the OAuth provider and its port must be
+available. The MCP SDK handles OAuth discovery, PKCE, state validation, token
+exchange, and refresh. For compatibility with OAuth servers whose metadata
+differs only by an empty root-path slash, the client permits that exact
+same-origin variation; scheme, host, port, query, fragment, and non-root path
+mismatches remain rejected. stdio server launching is not included.
+
+Examples (set credentials in the environment, or omit these exports and enter
+the values when prompted; never put credential values in `mcp.json`):
+
+```sh
+export GOOGLE_CLIENT_ID='your-client-id'
+export GOOGLE_CLIENT_SECRET='your-client-secret'
+```
+
+```text
+# A bearer-token server
+/mcp add https://example.com/mcp --agent researcher --name docs --auth bearer --token-env EXAMPLE_MCP_TOKEN
+
+# An API key or custom header (the value is read from the named environment variable)
+/mcp add https://example.com/mcp --global --name internal --auth headers --header-env X-API-Key=INTERNAL_MCP_KEY
+
+# Generic OAuth authorization-code server
+/mcp add https://example.com/mcp --agent gmailAgent --name mail --auth oauth --client-id-env GOOGLE_CLIENT_ID --client-secret-env GOOGLE_CLIENT_SECRET --redirect-uri http://127.0.0.1:8765/callback --scopes 'scope.one scope.two'
+```
+
+OAuth supports confidential clients using `client_secret_post` by default; set
+`--token-auth-method client_secret_basic` if the provider requires HTTP Basic
+client authentication, or use `none` for a public PKCE client without a client
+secret.
+
+OAuth configuration is provider-neutral. For any provider, use the redirect URI
+shown in its OAuth application settings and configure matching scopes. No
+provider-specific account setup is performed by the harness. The current OAuth
+token cache lasts for one process run, so a new run may require authorization
+again depending on the provider. As with all MCP tools, calls remain subject to
+the configured tool-approval policy.
+
+The built-in `gmail` subagent is scoped to the Gmail MCP registration in the
+local `mcp.json`; invoke it through `delegate_gmail`. Google's Gmail MCP is a
+Developer Preview and provides email search/read, labels, and draft creation.
+It does not expose a direct send-email tool, so the subagent can prepare drafts
+for you to review and send in Gmail, but must not claim to have sent a message.
+See [Google's Gmail MCP setup and tool reference](https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server).
 
 ## Development
 

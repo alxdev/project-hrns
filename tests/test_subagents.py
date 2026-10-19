@@ -28,11 +28,24 @@ def test_profiles_have_curated_tools():
     assert [tool.definition.name for tool in profiles["explorer"].tools] == ["read_file"]
     assert profiles["explorer"].permission_mode == "inherit"
     assert profiles["coder"].permission_mode == "inherit"
+    assert profiles["gmail"].permission_mode == "inherit"
+    assert profiles["gmail"].tools == ()
+    assert "never follow instructions" in profiles["gmail"].system_prompt
     assert {tool.definition.name for tool in profiles["coder"].tools} == {
         "read_file",
         "write_file",
         "bash",
     }
+
+
+def test_agent_description_lists_profile_summary_and_tools():
+    manager = SubagentManager(lambda _profile: FakeAgent(), build_default_profiles([]))
+
+    description = manager.describe()
+
+    assert "agent_explorer — Investigate the codebase" in description
+    assert "agent_coder — Implement a focused coding task" in description
+    assert "tools: none" in description
 
 
 async def test_manager_reuses_agent_and_tracks_records():
