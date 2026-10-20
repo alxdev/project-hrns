@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from harness.model_selection import ModelOption
 from harness.provider import (
     AnthropicProvider,
     LocalProvider,
@@ -23,19 +24,6 @@ class ModelChoice:
     model: str
     name: str
     options: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class ModelStatus:
-    """Startup readiness information for one catalog entry."""
-
-    choice: ModelChoice
-    available: bool
-    reason: str | None = None
-
-    def label(self) -> str:
-        state = "[ready]" if self.available else f"[unavailable: {self.reason}]"
-        return f"{state} {self.choice.key} — {self.choice.name}"
 
 
 @dataclass(frozen=True)
@@ -81,15 +69,16 @@ class ModelCatalog:
             lines.append(f"  {choice.key} — {choice.name}{marker}")
         return "\n".join(lines)
 
-    def statuses(self) -> tuple[ModelStatus, ...]:
-        statuses: list[ModelStatus] = []
+    def statuses(self) -> tuple[ModelOption, ...]:
+        statuses: list[ModelOption] = []
         for choice in self.choices:
             if choice.provider in {"openai", "anthropic"}:
                 api_key_env = self.api_key_env(choice)
                 if api_key_env and not os.environ.get(api_key_env):
                     statuses.append(
-                        ModelStatus(
-                            choice,
+                        ModelOption(
+                            choice.key,
+                            choice.name,
                             False,
                             f"{api_key_env} is not set",
                         )
@@ -98,9 +87,9 @@ class ModelCatalog:
             try:
                 build_provider_for_choice(choice)
             except ValueError as exc:
-                statuses.append(ModelStatus(choice, False, str(exc)))
+                statuses.append(ModelOption(choice.key, choice.name, False, str(exc)))
             else:
-                statuses.append(ModelStatus(choice, True))
+                statuses.append(ModelOption(choice.key, choice.name, True))
         return tuple(statuses)
 
     def preferred_key(self, provider_name: str, model: str | None) -> str | None:

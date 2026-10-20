@@ -70,5 +70,5 @@ def test_catalog_statuses_report_missing_cloud_credentials(monkeypatch):
     status = catalog.statuses()[0]
 
     assert not status.available
+    assert status.key == "openai/gpt-4o-mini"
     assert status.reason == "OPENAI_API_KEY is not set"
-    assert "unavailable" in status.label()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.widgets import Button, Dialog, Label, RadioList
 
 from harness.api.types import ToolDefinition
+from harness.model_selection import MODEL_PICKER_EXIT, ModelOption
 
 
 class PromptToolkitInput:
@@ -48,11 +50,10 @@ class PromptToolkitInput:
 
     async def pick_model(
         self,
-        values: list[tuple[str, str]],
+        options: Sequence[ModelOption],
         current: str | None = None,
-        title: str = "Models",
-        text: str = "Select a model (↑/↓ to move, Enter to select, Esc to cancel)",
     ) -> str | None:
+        values = [(option.key, self._model_option_label(option)) for option in options]
         radio_list = RadioList(values=values, default=current)
 
         def select_model() -> None:
@@ -63,10 +64,13 @@ class PromptToolkitInput:
             get_app().exit(result=None)
 
         dialog = Dialog(
-            title=title,
+            title="Models",
             body=HSplit(
                 [
-                    Label(text=text, dont_extend_height=True),
+                    Label(
+                        text="Select a model (↑/↓ to move, Enter to select, Esc to cancel)",
+                        dont_extend_height=True,
+                    ),
                     radio_list,
                 ],
                 padding=1,
@@ -101,3 +105,10 @@ class PromptToolkitInput:
             full_screen=True,
         )
         return await app.run_async()
+
+    @staticmethod
+    def _model_option_label(option: ModelOption) -> str:
+        if option.key == MODEL_PICKER_EXIT:
+            return option.name
+        state = "[ready]" if option.available else f"[unavailable: {option.reason}]"
+        return f"{state} {option.key} — {option.name}"

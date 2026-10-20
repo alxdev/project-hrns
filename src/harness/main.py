@@ -14,6 +14,7 @@ from harness.compaction import CompactionManager
 from harness.config import HarnessConfig, parse_config
 from harness.mcp import MCPConfigStore, MCPToolManager
 from harness.model_catalog import ModelCatalog, ModelChoice, build_provider_for_choice
+from harness.model_selection import MODEL_PICKER_EXIT, ModelOption
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
 from harness.provider import (
     AnthropicProvider,
@@ -35,6 +36,7 @@ from harness.tools.read_file import ReadFileTool
 from harness.tools.registry import ToolRegistry
 from harness.tools.write_file import WriteFileTool
 from harness.transcript import Transcript, TranscriptEventSink
+from harness.ui.protocols import InputAdapter, OutputRenderer
 
 
 def build_provider(
@@ -49,53 +51,39 @@ def build_provider(
     raise ValueError(f"unsupported provider: {config.provider_name}")
 
 
-EXIT_MODEL_KEY = "__exit__"
-
-
 async def choose_startup_model(
-    input_adapter: Any,
-    output: Any,
+    input_adapter: InputAdapter,
+    output: OutputRenderer,
     model_catalog: ModelCatalog,
     config: HarnessConfig,
 ) -> tuple[Any, ModelChoice] | None:
     """Show the startup model picker and build the selected provider."""
-    statuses = model_catalog.statuses()
-    status_by_key = {status.choice.key: status for status in statuses}
-    values = [(status.choice.key, status.label()) for status in statuses]
-    values.append((EXIT_MODEL_KEY, "Exit application"))
+    options = list(model_catalog.statuses())
+    option_by_key = {option.key: option for option in options}
+    if not any(option.available for option in options):
+        options.append(ModelOption(MODEL_PICKER_EXIT, "Exit application", True))
     current = model_catalog.preferred_key(config.provider_name, config.model)
-    if current is None or not status_by_key[current].available:
+    if current is None or not option_by_key[current].available:
         current = next(
-            (status.choice.key for status in statuses if status.available),
-            EXIT_MODEL_KEY,
+            (option.key for option in options if option.available),
+            MODEL_PICKER_EXIT,
         )
-    picker = getattr(input_adapter, "pick_model", None)
-    if picker is None:
-        ready = next((status for status in statuses if status.available), None)
-        if ready is None:
-            return None
-        return build_provider_for_choice(ready.choice), ready.choice
-
     while True:
-        selected = await picker(
-            values,
-            current,
-            "Select startup model",
-            "Select a model to start (entries show readiness; Esc or Exit cancels)",
-        )
-        if selected is None or selected == EXIT_MODEL_KEY:
+        selected = await input_adapter.pick_model(options, current)
+        if selected is None or selected == MODEL_PICKER_EXIT:
             return None
-        status = status_by_key.get(selected)
-        if status is None:
+        option = option_by_key.get(selected)
+        if option is None:
             output.error(f"unknown startup model: {selected}")
             continue
-        if not status.available:
-            output.error(f"{status.choice.key} is unavailable: {status.reason}")
+        if not option.available:
+            output.error(f"{option.key} is unavailable: {option.reason}")
             continue
+        choice = model_catalog.find(selected)
         try:
-            return build_provider_for_choice(status.choice), status.choice
+            return build_provider_for_choice(choice), choice
         except ValueError as exc:
-            output.error(f"{status.choice.key} is unavailable: {exc}")
+            output.error(f"{option.key} is unavailable: {exc}")
 
 
 async def main(argv: list[str] | None = None) -> int:
@@ -240,12 +228,11 @@ async def main(argv: list[str] | None = None) -> int:
         return current_model_key
 
     async def pick_model() -> str:
-        picker = getattr(input_adapter, "pick_model", None)
-        if picker is None:
+        if input_adapter is None or output is None:
             return model_catalog.describe(current_model_key)
-        values = [(choice.key, f"{choice.key} — {choice.name}") for choice in model_catalog.choices]
+        options = list(model_catalog.statuses())
         with output.suspend():
-            selected = await picker(values, current_model_key)
+            selected = await input_adapter.pick_model(options, current_model_key)
         if selected is None:
             return "model selection cancelled"
         try:
