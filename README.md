@@ -235,6 +235,20 @@ python -m harness
 The default model is configurable with `HARNESS_MODEL`. The working directory
 for tools is configurable with `HARNESS_WORKING_DIR`.
 
+## Project context
+
+At startup, the harness looks for `AGENTS.md` in the configured working
+directory. When present, its contents are appended only to the root
+orchestrator's provider system prompt. The file is read once at startup;
+restart the harness after editing it. Keep it focused on repository guidance,
+and never put API keys or other secrets in it.
+
+Subagents do not receive the full project context. The root orchestrator uses
+`AGENTS.md` to understand the repository and passes relevant instructions in
+each focused delegation request. Stable role behavior remains defined by the
+subagent profiles in `src/harness/subagents/profiles.py`. The interactive
+`/context` command reports the root context file.
+
 ## Architecture
 
 ```text

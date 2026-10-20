@@ -15,6 +15,7 @@ def build_default_commands() -> CommandRegistry:
         "models", "List or select a configured model.", _models, "/models [provider/model]"
     )
     registry.register("clear", "Clear the conversation history.", _clear)
+    registry.register("context", "Show loaded AGENTS.md project context.", _context)
     registry.register("tools", "List registered tools.", _tools)
     registry.register("agents", "List agents, descriptions, and available tools.", _agents)
     registry.register(
@@ -90,6 +91,12 @@ def _clear(_args: str, context: CommandContext) -> CommandResult:
     if context.transcript is not None:
         context.transcript.clear()
     return CommandResult("conversation cleared")
+
+
+def _context(_args: str, context: CommandContext) -> CommandResult:
+    if context.project_context is None:
+        return CommandResult("project context is unavailable")
+    return CommandResult(context.project_context.describe())
 
 
 def _tools(_args: str, context: CommandContext) -> CommandResult:

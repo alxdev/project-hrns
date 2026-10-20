@@ -16,6 +16,7 @@ from harness.mcp import MCPConfigStore, MCPToolManager
 from harness.model_catalog import ModelCatalog, ModelChoice, build_provider_for_choice
 from harness.model_selection import MODEL_PICKER_EXIT, ModelOption
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
+from harness.project_context import ProjectContext, load_project_context
 from harness.provider import (
     AnthropicProvider,
     LocalProvider,
@@ -41,14 +42,20 @@ from harness.ui.protocols import InputAdapter, OutputRenderer
 
 def build_provider(
     config: HarnessConfig,
+    project_context: ProjectContext | None = None,
 ) -> OpenAIProvider | AnthropicProvider | LocalProvider:
+    provider: OpenAIProvider | AnthropicProvider | LocalProvider
     if config.provider_name == "openai":
-        return OpenAIProvider(model=config.model)
-    if config.provider_name == "anthropic":
-        return AnthropicProvider(model=config.model)
-    if config.provider_name == "local":
-        return LocalProvider(model=config.model)
-    raise ValueError(f"unsupported provider: {config.provider_name}")
+        provider = OpenAIProvider(model=config.model)
+    elif config.provider_name == "anthropic":
+        provider = AnthropicProvider(model=config.model)
+    elif config.provider_name == "local":
+        provider = LocalProvider(model=config.model)
+    else:
+        raise ValueError(f"unsupported provider: {config.provider_name}")
+    if project_context is not None:
+        provider.system = project_context.system_prompt(provider.system)
+    return provider
 
 
 async def choose_startup_model(
@@ -56,6 +63,7 @@ async def choose_startup_model(
     output: OutputRenderer,
     model_catalog: ModelCatalog,
     config: HarnessConfig,
+    project_context: ProjectContext,
 ) -> tuple[Any, ModelChoice] | None:
     """Show the startup model picker and build the selected provider."""
     options = list(model_catalog.statuses())
@@ -81,7 +89,9 @@ async def choose_startup_model(
             continue
         choice = model_catalog.find(selected)
         try:
-            return build_provider_for_choice(choice), choice
+            provider = build_provider_for_choice(choice)
+            provider.system = project_context.system_prompt(provider.system)
+            return provider, choice
         except ValueError as exc:
             output.error(f"{option.key} is unavailable: {exc}")
 
@@ -89,6 +99,7 @@ async def choose_startup_model(
 async def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     config = parse_config(argv)
+    project_context = load_project_context(config.working_directory)
     model_catalog = ModelCatalog.load(Path.cwd())
     commands = build_default_commands()
     current_model_key: str | None = None
@@ -102,7 +113,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     if config.non_interactive:
         try:
-            provider = build_provider(config)
+            provider = build_provider(config, project_context)
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
@@ -115,7 +126,9 @@ async def main(argv: list[str] | None = None) -> int:
         from harness.ui.prompt_toolkit_rich import TUI_NAME, create_ui
 
         input_adapter, output = create_ui(config.history_file)
-        selected_startup = await choose_startup_model(input_adapter, output, model_catalog, config)
+        selected_startup = await choose_startup_model(
+            input_adapter, output, model_catalog, config, project_context
+        )
         if selected_startup is None:
             output.write("startup cancelled")
             return 0
@@ -175,7 +188,7 @@ async def main(argv: list[str] | None = None) -> int:
             compaction=compaction,
             max_turns=profile.max_turns,
             name=profile.name,
-            system_prompt=profile.system_prompt,
+            system_prompt=subagent_provider.system,
             log_prefix="  ↳ ",
             quiet=True,
         )
@@ -287,6 +300,7 @@ async def main(argv: list[str] | None = None) -> int:
         select_model=select_model,
         current_model_key=active_model_key,
         model_picker=pick_model,
+        project_context=project_context,
     )
     try:
         await InteractiveRunner(input_adapter, output, OperationController()).run(

@@ -20,6 +20,7 @@ class CommandContext:
     select_model: Callable[[str], str] | None = None
     current_model_key: Callable[[], str | None] | None = None
     model_picker: Callable[[], Awaitable[str]] | None = None
+    project_context: Any = None
 
 
 @dataclass(frozen=True)

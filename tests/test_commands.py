@@ -1,4 +1,5 @@
 from harness.commands import CommandContext, build_default_commands
+from harness.project_context import ProjectContext
 from harness.provider import MockProvider
 from harness.tools.registry import ToolRegistry
 
@@ -54,6 +55,20 @@ def test_status_displays_shared_runtime_configuration():
     result = commands.dispatch("/status", command_context)
 
     assert result.text == "runtime details"
+
+
+def test_context_displays_loaded_root_project_context(tmp_path):
+    command_context = context()
+    command_context.project_context = ProjectContext(
+        working_directory=tmp_path,
+        root_path=tmp_path / "AGENTS.md",
+        root_content="shared instructions",
+    )
+
+    result = command_context.commands.dispatch("/context", command_context)
+
+    assert str(tmp_path / "AGENTS.md") in result.text
+    assert "not found" not in result.text
 
 
 def test_models_lists_and_selects_from_the_catalog():
