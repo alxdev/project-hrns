@@ -1,5 +1,6 @@
 import json
 
+from harness.provider.local_models.local_models import LocalProvider
 from harness.provider.local_models.local_openai import LocalOpenAICompatibleProvider
 
 
@@ -50,3 +51,28 @@ def test_local_provider_omits_auth_for_keyless_servers(tmp_path):
     provider = LocalOpenAICompatibleProvider(config_path=config_path)
 
     assert provider._headers() == {"Content-Type": "application/json"}
+
+
+def test_local_provider_facade_dispatches_the_configured_style(tmp_path):
+    config_path = tmp_path / "local_models.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "provider": {
+                    "server": {
+                        "style": "openai-compatible",
+                        "options": {"baseURL": "http://localhost:9000/v1"},
+                        "models": {"model-a": {}},
+                    }
+                },
+                "model": "server/model-a",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    provider = LocalProvider(config_path=config_path)
+    provider.system = "profile prompt"
+
+    assert provider.model == "model-a"
+    assert provider.system == "profile prompt"

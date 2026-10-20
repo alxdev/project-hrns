@@ -17,7 +17,7 @@ from harness.model_catalog import ModelCatalog, ModelChoice, build_provider_for_
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
 from harness.provider import (
     AnthropicProvider,
-    LocalOpenAICompatibleProvider,
+    LocalProvider,
     OpenAIProvider,
 )
 from harness.runtime.noninteractive import run_once
@@ -39,13 +39,13 @@ from harness.transcript import Transcript, TranscriptEventSink
 
 def build_provider(
     config: HarnessConfig,
-) -> OpenAIProvider | AnthropicProvider | LocalOpenAICompatibleProvider:
+) -> OpenAIProvider | AnthropicProvider | LocalProvider:
     if config.provider_name == "openai":
         return OpenAIProvider(model=config.model)
     if config.provider_name == "anthropic":
         return AnthropicProvider(model=config.model)
     if config.provider_name == "local":
-        return LocalOpenAICompatibleProvider(model=config.model)
+        return LocalProvider(model=config.model)
     raise ValueError(f"unsupported provider: {config.provider_name}")
 
 

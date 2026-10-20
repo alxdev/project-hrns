@@ -8,7 +8,7 @@ from typing import Any
 
 from harness.provider import (
     AnthropicProvider,
-    LocalOpenAICompatibleProvider,
+    LocalProvider,
     OpenAIProvider,
 )
 from harness.provider.local_models import load_local_models
@@ -69,7 +69,7 @@ class ModelCatalog:
         return "\n".join(lines)
 
 
-ConfiguredProvider = OpenAIProvider | AnthropicProvider | LocalOpenAICompatibleProvider
+ConfiguredProvider = OpenAIProvider | AnthropicProvider | LocalProvider
 
 
 def build_provider_for_choice(choice: ModelChoice) -> ConfiguredProvider:
@@ -88,7 +88,7 @@ def build_provider_for_choice(choice: ModelChoice) -> ConfiguredProvider:
             raise ValueError(f"baseURL for {choice.key} must be a string")
         return AnthropicProvider(api_key=api_key, model=choice.model, base_url=base_url)
     if choice.provider == "local":
-        return LocalOpenAICompatibleProvider(model=choice.model)
+        return LocalProvider(model=choice.model)
     raise ValueError(f"unsupported model provider: {choice.provider}")
 
 

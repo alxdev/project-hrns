@@ -24,6 +24,7 @@ class LocalProviderDefinition:
 
     name: str
     display_name: str
+    style: str
     options: dict[str, Any]
     models: dict[str, LocalModelDefinition]
 
@@ -57,6 +58,64 @@ class LocalModelProvider(Protocol):
         messages: Sequence[Message],
         tools: Sequence[ToolDefinition],
     ) -> AsyncIterator[ProviderStreamEvent]: ...
+
+
+class LocalProvider:
+    """Stable local-provider façade that dispatches to a configured style adapter."""
+
+    def __init__(
+        self,
+        model: str | None = None,
+        config_path: Path | None = None,
+        system: str = "You are a helpful coding assistant.",
+        max_tokens: int = 4096,
+    ) -> None:
+        path = config_path or Path.cwd() / "local_models.json"
+        config = load_local_models(path)
+        provider_config, _model_id = resolve_local_model(config, model, path)
+        if provider_config.style == "openai-compatible":
+            from .local_openai import LocalOpenAICompatibleProvider
+
+            self._implementation: LocalModelProvider = LocalOpenAICompatibleProvider(
+                model=model,
+                config_path=path,
+                system=system,
+                max_tokens=max_tokens,
+            )
+        else:
+            raise ValueError(
+                f"unsupported local provider style {provider_config.style!r} "
+                f"for provider {provider_config.name!r}"
+            )
+
+    @property
+    def model(self) -> str:
+        return self._implementation.model
+
+    @property
+    def system(self) -> str:
+        return self._implementation.system
+
+    @system.setter
+    def system(self, value: str) -> None:
+        self._implementation.system = value
+
+    def set_model(self, model: str) -> None:
+        self._implementation.set_model(model)
+
+    async def send(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolDefinition],
+    ) -> ProviderResponse:
+        return await self._implementation.send(messages, tools)
+
+    def stream(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolDefinition],
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        return self._implementation.stream(messages, tools)
 
 
 def load_local_models(path: Path) -> LocalModelsDefinition:
@@ -95,6 +154,7 @@ def load_local_models(path: Path) -> LocalModelsDefinition:
         providers[provider_name] = LocalProviderDefinition(
             name=provider_name,
             display_name=str(provider_data.get("name", provider_name)),
+            style=_provider_style(provider_data),
             options=options,
             models=models,
         )
@@ -126,3 +186,12 @@ def resolve_local_model(
     if model_id not in provider.models:
         raise ValueError(f"unknown local model {selected!r} in {path.name}")
     return provider, model_id
+
+
+def _provider_style(provider_data: dict[str, Any]) -> str:
+    style = provider_data.get("style")
+    if isinstance(style, str) and style:
+        return style
+    if provider_data.get("npm") == "@ai-sdk/openai-compatible":
+        return "openai-compatible"
+    return "openai-compatible"
