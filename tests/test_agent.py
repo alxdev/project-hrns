@@ -1,5 +1,7 @@
+import asyncio
+
 from harness.agent import Agent
-from harness.api.types import ProviderResponse, TextBlock, ToolCall
+from harness.api.types import ProviderResponse, TextBlock, ToolCall, ToolDefinition
 from harness.permissions import PermissionDecision
 from harness.provider import MockProvider
 from harness.tools.base import ToolContext
@@ -66,6 +68,41 @@ async def test_denied_tool_is_returned_as_error_result(tmp_path):
     denied = provider.calls[1][0][-1].content[0]
     assert denied.is_error is True
     assert denied.content == "user denied this tool call"
+
+
+async def test_cancelled_tool_call_rolls_back_incomplete_turn(tmp_path):
+    provider = MockProvider(
+        responses=[
+            ProviderResponse([ToolCall("call-1", "cancel", {})], "tool_use"),
+            ProviderResponse([TextBlock("Recovered.")], "end_turn"),
+        ]
+    )
+
+    class CancelTool:
+        @property
+        def definition(self):
+            return ToolDefinition("cancel", "Cancel the operation.", {"type": "object"})
+
+        async def execute(self, _context, _arguments):
+            raise asyncio.CancelledError
+
+    agent = Agent(
+        provider=provider,
+        tools=ToolRegistry([CancelTool()]),
+        permissions=AllowAll(),
+        context=ToolContext(tmp_path),
+    )
+
+    try:
+        await agent.send("Start the cancellable task")
+    except asyncio.CancelledError:
+        pass
+    else:
+        raise AssertionError("the cancelled tool call should propagate cancellation")
+
+    assert agent.messages == []
+    assert await agent.send("Continue after cancellation") == "Recovered."
+    assert [message.role for message in provider.calls[1][0]] == ["user"]
 
 
 async def test_quiet_agent_returns_text_without_emitting_transcript(tmp_path):
