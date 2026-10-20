@@ -104,9 +104,124 @@ Cloud catalog entries may specify an `apiKeyEnv` value; the secret itself
 remains in the environment rather than in JSON. Start with `--provider local`
 to use the local catalog's default model.
 
-The OpenAI provider defaults to `gpt-4o-mini`. Set `HARNESS_MODEL` to choose a
-different model. Its configurable `base_url` also makes it suitable for
-OpenAI-compatible local servers when constructed directly in Python.
+## Model configuration
+
+Interactive startup and `/models` read model definitions from two files in the
+project root:
+
+- `local_models.json` contains local model servers.
+- `cloud_models.json` contains cloud providers and their models.
+
+The files are catalogs; they do not download models or start servers. A local
+server must already be running at the configured URL.
+
+### Local models
+
+Add each local server under `provider`. The provider's `options.baseURL` must
+point to an API compatible with the configured style. OpenAI-compatible local
+servers use `style: "openai-compatible"`:
+
+```json
+{
+  "provider": {
+    "litert": {
+      "style": "openai-compatible",
+      "name": "LiteRT Local",
+      "options": {
+        "baseURL": "http://0.0.0.0:9379/v1"
+      },
+      "models": {
+        "gemma-4-E4B-it.litertlm,gpu,11000": {
+          "name": "Gemma 4 E4B (GPU)"
+        }
+      }
+    }
+  },
+  "model": "litert/gemma-4-E4B-it.litertlm,gpu,11000"
+}
+```
+
+The model identifier must match the identifier expected by the local server.
+The top-level `model` is the default used by `--provider local`; the startup
+picker can select any model declared in the file. The catalog key shown in the
+picker is `local/<provider>/<model-id>`.
+
+For a local server that requires an API key, put it in the provider options as
+`apiKey` (or `api_key`). Local provider keys are read from `local_models.json`.
+For OpenAI-compatible local servers, the harness sends the key as a Bearer
+token.
+
+Start the local server separately, then launch the harness. For example, with
+the LiteRT configuration above:
+
+```sh
+uvx litert-lm serve --host 0.0.0.0 --port 9379
+python -m harness --provider local
+```
+
+The startup picker validates the local configuration but does not make an LLM
+request to check server connectivity. If the server is not running, the model
+can still appear as ready and its first request will fail with the server error.
+
+### Cloud models
+
+Add cloud providers and models to `cloud_models.json`. `apiKeyEnv` is the name
+of the environment variable containing the secret, not the secret itself:
+
+```json
+{
+  "provider": {
+    "openai": {
+      "name": "OpenAI",
+      "models": {
+        "gpt-4o-mini": {
+          "name": "GPT-4o Mini",
+          "apiKeyEnv": "OPENAI_API_KEY"
+        }
+      }
+    },
+    "anthropic": {
+      "name": "Anthropic",
+      "models": {
+        "claude-sonnet-4-5": {
+          "name": "Claude Sonnet",
+          "apiKeyEnv": "ANTHROPIC_API_KEY"
+        }
+      }
+    }
+  }
+}
+```
+
+Provider-level `options` are inherited by its models. Model-level options
+override them. For supported cloud providers, `baseURL` can be used to select
+an alternate API endpoint. Set the required key before starting:
+
+```sh
+export OPENAI_API_KEY="..."
+export ANTHROPIC_API_KEY="..."
+```
+
+Cloud entries whose key is missing are still shown in the startup picker, but
+are marked unavailable with the missing environment variable. The currently
+supported cloud providers are OpenAI and Anthropic; unsupported provider names
+are shown as unavailable until an adapter is added.
+
+### Selecting models
+
+The startup picker selects the first usable model by default. Use the keyboard
+to choose another entry, or cancel to exit. After startup:
+
+```text
+/models                         Open the interactive picker
+/models list                    Print all catalog entries
+/models local/litert/<model>    Select a local model
+/models openai/gpt-4o-mini      Select a cloud model
+```
+
+The regular OpenAI provider and OpenAI-compatible local providers are separate
+features. Local OpenAI-compatible models belong in `local_models.json`; do not
+move them into the regular OpenAI configuration.
 
 From the project directory, a local development setup can be created with:
 
