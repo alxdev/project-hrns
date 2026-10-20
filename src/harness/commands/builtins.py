@@ -64,6 +64,11 @@ def _models(args: str, context: CommandContext) -> CommandResult:
     if context.model_catalog is None:
         return CommandResult("model catalog unavailable")
     if not args:
+        if context.model_picker is not None:
+            return CommandResult(action=context.model_picker)
+        current = context.current_model_key() if context.current_model_key else None
+        return CommandResult(context.model_catalog.describe(current))
+    if args.lower() in {"list", "ls"}:
         current = context.current_model_key() if context.current_model_key else None
         return CommandResult(context.model_catalog.describe(current))
     if context.select_model is None:

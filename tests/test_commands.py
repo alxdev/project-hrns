@@ -73,3 +73,22 @@ def test_models_lists_and_selects_from_the_catalog():
     assert listed.text == "available models"
     assert changed.text == "model: openai/changed"
     assert selected == ["openai/changed"]
+
+
+def test_models_without_arguments_uses_the_interactive_picker():
+    command_context = context()
+    command_context.model_catalog = type(
+        "CatalogStub",
+        (),
+        {"describe": lambda _self, _current: "available models"},
+    )()
+
+    async def picker():
+        return "picked"
+
+    command_context.model_picker = picker
+
+    result = command_context.commands.dispatch("/models", command_context)
+
+    assert result.text == ""
+    assert result.action is picker

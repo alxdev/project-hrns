@@ -189,6 +189,20 @@ async def main(argv: list[str] | None = None) -> int:
     def active_model_key() -> str | None:
         return current_model_key
 
+    async def pick_model() -> str:
+        picker = getattr(input_adapter, "pick_model", None)
+        if picker is None:
+            return model_catalog.describe(current_model_key)
+        values = [(choice.key, f"{choice.key} — {choice.name}") for choice in model_catalog.choices]
+        with output.suspend():
+            selected = await picker(values, current_model_key)
+        if selected is None:
+            return "model selection cancelled"
+        try:
+            return select_model(selected)
+        except (ValueError, RuntimeError) as exc:
+            return f"model selection failed: {exc}"
+
     if config.non_interactive:
         prompt = config.prompt if config.prompt is not None else sys.stdin.read()
         try:
@@ -235,6 +249,7 @@ async def main(argv: list[str] | None = None) -> int:
         model_catalog=model_catalog,
         select_model=select_model,
         current_model_key=active_model_key,
+        model_picker=pick_model,
     )
     try:
         await InteractiveRunner(input_adapter, output, OperationController()).run(
