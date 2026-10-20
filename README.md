@@ -246,8 +246,25 @@ and never put API keys or other secrets in it.
 Subagents do not receive the full project context. The root orchestrator uses
 `AGENTS.md` to understand the repository and passes relevant instructions in
 each focused delegation request. Stable role behavior remains defined by the
-subagent profiles in `src/harness/subagents/profiles.py`. The interactive
+configured profiles in `subagents.json`; tool resolution and permission
+enforcement remain in Python. The interactive
 `/context` command reports the root context file.
+
+## Subagent configuration
+
+Subagents are configured in `subagents.json` in the configured working
+directory. The file is authoritative: if it is missing or contains an empty
+`profiles` object, no subagents are configured. There is no Python profile
+fallback.
+
+Each profile names existing built-in tools by name. MCP-only profiles can use
+an empty `tools` array with `requires_tools` enabled; their tools are loaded
+when the profile is delegated to. Tool implementations and permission checks
+remain enforced by Python code.
+
+The repository's `subagents.json` provides the current explorer, coder, and
+Gmail profiles. Copy or create this file in another working directory to
+configure the profiles available there.
 
 ## Architecture
 

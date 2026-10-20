@@ -29,7 +29,7 @@ from harness.subagents import (
     DelegationTool,
     SubagentManager,
     SubagentProfile,
-    build_default_profiles,
+    load_profiles,
 )
 from harness.tools.base import Tool, ToolContext
 from harness.tools.bash import BashTool
@@ -148,7 +148,15 @@ async def main(argv: list[str] | None = None) -> int:
     compaction = CompactionManager(provider)
 
     base_tools: list[Tool] = [ReadFileTool(), WriteFileTool(), BashTool()]
-    profiles = build_default_profiles(base_tools)
+    try:
+        profiles = load_profiles(config.working_directory / "subagents.json", base_tools)
+    except ValueError as exc:
+        message = f"invalid subagents.json: {exc}"
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+        return 2
 
     async def prompt_mcp_secret(variable: str) -> str:
         if input_adapter is None or output is None:

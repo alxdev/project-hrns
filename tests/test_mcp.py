@@ -14,7 +14,7 @@ from harness.mcp.config import resolve_auth_headers
 from harness.mcp.oauth_compat import install_root_slash_issuer_compatibility
 from harness.mcp.tools import MCPTool
 from harness.provider import MockProvider
-from harness.subagents import SubagentManager, build_default_profiles
+from harness.subagents import SubagentManager, SubagentProfile
 from harness.subagents.tools import DelegationTool
 from harness.tools.base import ToolContext
 from harness.tools.read_file import ReadFileTool
@@ -60,6 +60,22 @@ class FakeClient:
         return SimpleNamespace(
             content=[SimpleNamespace(text="found it")], structured_content=None, is_error=False
         )
+
+
+def profile(name, tools=(), requires_tools=False):
+    description = (
+        "Investigate the codebase and return a focused answer."
+        if name == "explorer"
+        else f"Use {name} tools."
+    )
+    return SubagentProfile(
+        name=name,
+        description=description,
+        system_prompt=f"You are the {name} subagent.",
+        tools=tuple(tools),
+        permission_mode="inherit",
+        requires_tools=requires_tools,
+    )
 
 
 def test_config_store_round_trip_and_scope(tmp_path: Path):
@@ -321,7 +337,7 @@ async def test_missing_oauth_environment_fails_gmail_delegation_before_model_cal
 
     subagents = SubagentManager(
         factory,
-        build_default_profiles([]),
+        {"gmail": profile("gmail", requires_tools=True)},
         tool_loader=mcp.tools_for,
         events=events,
     )
@@ -354,7 +370,7 @@ def test_transcript_reports_mcp_discovery_activity_and_outcome():
 
 
 async def test_subagent_discovers_tools_before_agent_factory():
-    profile = build_default_profiles([])["explorer"]
+    explorer = profile("explorer")
     order = []
 
     class AgentStub:
@@ -370,14 +386,14 @@ async def test_subagent_discovers_tools_before_agent_factory():
         assert "mcp_docs_search" in [tool.definition.name for tool in effective_profile.tools]
         return AgentStub()
 
-    manager = SubagentManager(factory, {"explorer": profile}, tool_loader=load_tools)
+    manager = SubagentManager(factory, {"explorer": explorer}, tool_loader=load_tools)
     await manager.delegate("explorer", "research")
 
     assert order == ["discover:explorer", "factory"]
 
 
 def test_tools_and_agents_commands_show_scoped_mcp_tools_and_descriptions():
-    profiles = build_default_profiles([ReadFileTool()])
+    profiles = {"explorer": profile("explorer", [ReadFileTool()])}
     subagents = SubagentManager(lambda _profile: None, profiles)
 
     class MCPView:
