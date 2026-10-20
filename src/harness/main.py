@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -12,6 +13,7 @@ from harness.commands import CommandContext, build_default_commands
 from harness.compaction import CompactionManager
 from harness.config import HarnessConfig, parse_config
 from harness.mcp import MCPConfigStore, MCPToolManager
+from harness.model_catalog import ModelCatalog, ModelChoice, build_provider_for_choice
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
 from harness.provider import (
     AnthropicProvider,
@@ -50,8 +52,21 @@ def build_provider(
 async def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     config = parse_config(argv)
+    model_catalog = ModelCatalog.load(Path.cwd())
     commands = build_default_commands()
     provider = build_provider(config)
+    current_model_key: str | None = None
+    current_choice: ModelChoice | None = None
+    for choice in model_catalog.choices:
+        if config.provider_name == "local":
+            if choice.provider == "local" and choice.model.endswith(f"/{provider.model}"):
+                current_choice = choice
+                current_model_key = choice.key
+                break
+        elif choice.provider == config.provider_name and choice.model == provider.model:
+            current_choice = choice
+            current_model_key = choice.key
+            break
     compaction = CompactionManager(provider)
     transcript = Transcript()
     events: Any
@@ -101,7 +116,11 @@ async def main(argv: list[str] | None = None) -> int:
     context = ToolContext(config.working_directory)
 
     def create_subagent(profile: SubagentProfile) -> Agent:
-        subagent_provider = build_provider(config)
+        subagent_provider = (
+            build_provider_for_choice(current_choice)
+            if current_choice is not None
+            else build_provider(config)
+        )
         subagent_provider.system = profile.system_prompt
         subagent_permissions = {
             "auto_allow": AlwaysAllow(),
@@ -151,6 +170,25 @@ async def main(argv: list[str] | None = None) -> int:
         before_send=load_global_mcp_tools,
     )
 
+    def select_model(identifier: str) -> str:
+        nonlocal current_choice, current_model_key, provider
+        choice = model_catalog.find(identifier)
+        selected_provider = build_provider_for_choice(choice)
+        selected_provider.system = provider.system
+        provider = selected_provider
+        current_choice = choice
+        current_model_key = choice.key
+        agent.provider = selected_provider
+        compaction.set_provider(selected_provider)
+        command_context.provider = selected_provider
+        return f"model: {choice.key} — {choice.name}"
+
+    def active_provider_name() -> str:
+        return current_choice.provider if current_choice is not None else config.provider_name
+
+    def active_model_key() -> str | None:
+        return current_model_key
+
     if config.non_interactive:
         prompt = config.prompt if config.prompt is not None else sys.stdin.read()
         try:
@@ -158,7 +196,7 @@ async def main(argv: list[str] | None = None) -> int:
                 agent,
                 prompt,
                 output=config.output,
-                provider=config.provider_name,
+                provider=active_provider_name(),
                 model=provider.model,
                 working_directory=config.working_directory,
                 compaction=compaction.strategy_name,
@@ -169,7 +207,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     output.write(
         format_startup_message(
-            provider=config.provider_name,
+            provider=active_provider_name(),
             model=provider.model,
             working_directory=config.working_directory,
             compaction=compaction.strategy_name,
@@ -186,7 +224,7 @@ async def main(argv: list[str] | None = None) -> int:
         subagents=subagents,
         transcript=transcript,
         runtime_info=lambda: format_runtime_configuration(
-            provider=config.provider_name,
+            provider=active_provider_name(),
             model=provider.model,
             working_directory=config.working_directory,
             compaction=compaction.strategy_name,
@@ -194,6 +232,9 @@ async def main(argv: list[str] | None = None) -> int:
             tui=TUI_NAME,
         ),
         mcp=mcp_manager,
+        model_catalog=model_catalog,
+        select_model=select_model,
+        current_model_key=active_model_key,
     )
     try:
         await InteractiveRunner(input_adapter, output, OperationController()).run(

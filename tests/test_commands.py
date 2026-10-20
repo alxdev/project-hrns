@@ -54,3 +54,22 @@ def test_status_displays_shared_runtime_configuration():
     result = commands.dispatch("/status", command_context)
 
     assert result.text == "runtime details"
+
+
+def test_models_lists_and_selects_from_the_catalog():
+    command_context = context()
+    selected: list[str] = []
+    command_context.model_catalog = type(
+        "CatalogStub",
+        (),
+        {"describe": lambda _self, _current: "available models"},
+    )()
+    command_context.current_model_key = lambda: "openai/initial-model"
+    command_context.select_model = lambda model: selected.append(model) or f"model: {model}"
+
+    listed = command_context.commands.dispatch("/models", command_context)
+    changed = command_context.commands.dispatch("/models openai/changed", command_context)
+
+    assert listed.text == "available models"
+    assert changed.text == "model: openai/changed"
+    assert selected == ["openai/changed"]

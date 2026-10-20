@@ -11,6 +11,9 @@ def build_default_commands() -> CommandRegistry:
     registry.register("help", "Show available commands.", _help)
     registry.register("status", "Show current runtime configuration.", _status)
     registry.register("model", "Show or change the current model.", _model, "/model [name]")
+    registry.register(
+        "models", "List or select a configured model.", _models, "/models [provider/model]"
+    )
     registry.register("clear", "Clear the conversation history.", _clear)
     registry.register("tools", "List registered tools.", _tools)
     registry.register("agents", "List agents, descriptions, and available tools.", _agents)
@@ -55,6 +58,20 @@ def _model(args: str, context: CommandContext) -> CommandResult:
         return CommandResult("current provider does not support changing models")
     set_model(args)
     return CommandResult(f"model: {context.provider.model}")
+
+
+def _models(args: str, context: CommandContext) -> CommandResult:
+    if context.model_catalog is None:
+        return CommandResult("model catalog unavailable")
+    if not args:
+        current = context.current_model_key() if context.current_model_key else None
+        return CommandResult(context.model_catalog.describe(current))
+    if context.select_model is None:
+        return CommandResult("model selection unavailable")
+    try:
+        return CommandResult(context.select_model(args))
+    except (ValueError, RuntimeError) as exc:
+        return CommandResult(str(exc))
 
 
 def _status(_args: str, context: CommandContext) -> CommandResult:

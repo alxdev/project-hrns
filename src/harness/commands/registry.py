@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 
-@dataclass(frozen=True)
+@dataclass
 class CommandContext:
     agent: Any
     provider: Any
@@ -16,6 +16,9 @@ class CommandContext:
     transcript: Any = None
     runtime_info: Callable[[], str] | None = None
     mcp: Any = None
+    model_catalog: Any = None
+    select_model: Callable[[str], str] | None = None
+    current_model_key: Callable[[], str | None] | None = None
 
 
 @dataclass(frozen=True)

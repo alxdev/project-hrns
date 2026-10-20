@@ -23,7 +23,7 @@ Phase 2 adds an independent interactive-shell layer:
 - Rich Markdown and panel rendering
 - Rich status spinner while the provider is working
 - A modular slash-command registry
-- `/help`, `/model`, `/clear`, `/tools`, `/exit`, and `/quit`
+- `/help`, `/model`, `/models`, `/clear`, `/tools`, `/exit`, and `/quit`
 
 Phase 3 adds an independent conversation-compaction package:
 
@@ -92,6 +92,12 @@ python -m harness
 The application loads configuration from `.env` automatically. `.env` is
 ignored by git, so keep provider credentials there and never commit them.
 Use `OPENAI_API_KEY` for OpenAI or `ANTHROPIC_API_KEY` for Anthropic.
+
+Available models are cataloged in `local_models.json` and
+`cloud_models.json`. Use `/models` to list them and `/models provider/model` to
+switch the active provider and model. Cloud catalog entries may specify an
+`apiKeyEnv` value; the secret itself remains in the environment rather than in
+JSON. Start with `--provider local` to use the local catalog's default model.
 
 The OpenAI provider defaults to `gpt-4o-mini`. Set `HARNESS_MODEL` to choose a
 different model. Its configurable `base_url` also makes it suitable for

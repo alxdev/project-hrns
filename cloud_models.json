@@ -1,0 +1,21 @@
+{
+  "provider": {
+    "openai": {
+      "name": "OpenAI",
+      "models": {
+        "gpt-4o-mini": {
+          "name": "GPT-4o Mini",
+          "apiKeyEnv": "OPENAI_API_KEY"
+        }
+      }
+    },
+    "anthropic": {
+      "name": "Anthropic",
+      "models": {
+        "claude-sonnet-4-5": {
+          "name": "Claude Sonnet"
+        }
+      }
+    }
+  }
+}
