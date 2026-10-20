@@ -13,7 +13,11 @@ from harness.compaction import CompactionManager
 from harness.config import HarnessConfig, parse_config
 from harness.mcp import MCPConfigStore, MCPToolManager
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
-from harness.provider import AnthropicProvider, OpenAIProvider
+from harness.provider import (
+    AnthropicProvider,
+    LocalOpenAICompatibleProvider,
+    OpenAIProvider,
+)
 from harness.runtime.noninteractive import run_once
 from harness.runtime.operations import OperationController
 from harness.runtime.status import format_runtime_configuration, format_startup_message
@@ -31,11 +35,15 @@ from harness.tools.write_file import WriteFileTool
 from harness.transcript import Transcript, TranscriptEventSink
 
 
-def build_provider(config: HarnessConfig) -> OpenAIProvider | AnthropicProvider:
+def build_provider(
+    config: HarnessConfig,
+) -> OpenAIProvider | AnthropicProvider | LocalOpenAICompatibleProvider:
     if config.provider_name == "openai":
         return OpenAIProvider(model=config.model)
     if config.provider_name == "anthropic":
         return AnthropicProvider(model=config.model)
+    if config.provider_name == "local":
+        return LocalOpenAICompatibleProvider(model=config.model)
     raise ValueError(f"unsupported provider: {config.provider_name}")
 
 
