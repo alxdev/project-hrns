@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -12,8 +13,14 @@ from harness.commands import CommandContext, build_default_commands
 from harness.compaction import CompactionManager
 from harness.config import HarnessConfig, parse_config
 from harness.mcp import MCPConfigStore, MCPToolManager
+from harness.model_catalog import ModelCatalog, ModelChoice, build_provider_for_choice
+from harness.model_selection import MODEL_PICKER_EXIT, ModelOption
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
-from harness.provider import AnthropicProvider, OpenAIProvider
+from harness.provider import (
+    AnthropicProvider,
+    LocalProvider,
+    OpenAIProvider,
+)
 from harness.runtime.noninteractive import run_once
 from harness.runtime.operations import OperationController
 from harness.runtime.status import format_runtime_configuration, format_startup_message
@@ -29,22 +36,63 @@ from harness.tools.read_file import ReadFileTool
 from harness.tools.registry import ToolRegistry
 from harness.tools.write_file import WriteFileTool
 from harness.transcript import Transcript, TranscriptEventSink
+from harness.ui.protocols import InputAdapter, OutputRenderer
 
 
-def build_provider(config: HarnessConfig) -> OpenAIProvider | AnthropicProvider:
+def build_provider(
+    config: HarnessConfig,
+) -> OpenAIProvider | AnthropicProvider | LocalProvider:
     if config.provider_name == "openai":
         return OpenAIProvider(model=config.model)
     if config.provider_name == "anthropic":
         return AnthropicProvider(model=config.model)
+    if config.provider_name == "local":
+        return LocalProvider(model=config.model)
     raise ValueError(f"unsupported provider: {config.provider_name}")
+
+
+async def choose_startup_model(
+    input_adapter: InputAdapter,
+    output: OutputRenderer,
+    model_catalog: ModelCatalog,
+    config: HarnessConfig,
+) -> tuple[Any, ModelChoice] | None:
+    """Show the startup model picker and build the selected provider."""
+    options = list(model_catalog.statuses())
+    option_by_key = {option.key: option for option in options}
+    if not any(option.available for option in options):
+        options.append(ModelOption(MODEL_PICKER_EXIT, "Exit application", True))
+    current = model_catalog.preferred_key(config.provider_name, config.model)
+    if current is None or not option_by_key[current].available:
+        current = next(
+            (option.key for option in options if option.available),
+            MODEL_PICKER_EXIT,
+        )
+    while True:
+        selected = await input_adapter.pick_model(options, current)
+        if selected is None or selected == MODEL_PICKER_EXIT:
+            return None
+        option = option_by_key.get(selected)
+        if option is None:
+            output.error(f"unknown startup model: {selected}")
+            continue
+        if not option.available:
+            output.error(f"{option.key} is unavailable: {option.reason}")
+            continue
+        choice = model_catalog.find(selected)
+        try:
+            return build_provider_for_choice(choice), choice
+        except ValueError as exc:
+            output.error(f"{option.key} is unavailable: {exc}")
 
 
 async def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     config = parse_config(argv)
+    model_catalog = ModelCatalog.load(Path.cwd())
     commands = build_default_commands()
-    provider = build_provider(config)
-    compaction = CompactionManager(provider)
+    current_model_key: str | None = None
+    current_choice: ModelChoice | None = None
     transcript = Transcript()
     events: Any
     permissions: Any
@@ -53,6 +101,11 @@ async def main(argv: list[str] | None = None) -> int:
     output: Any = None
 
     if config.non_interactive:
+        try:
+            provider = build_provider(config)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         events = TranscriptEventSink(transcript, NullEventSink())
         permissions = AlwaysAllow() if config.allow_tools else AlwaysDeny()
         root_permissions = AlwaysAllow()
@@ -62,6 +115,12 @@ async def main(argv: list[str] | None = None) -> int:
         from harness.ui.prompt_toolkit_rich import TUI_NAME, create_ui
 
         input_adapter, output = create_ui(config.history_file)
+        selected_startup = await choose_startup_model(input_adapter, output, model_catalog, config)
+        if selected_startup is None:
+            output.write("startup cancelled")
+            return 0
+        provider, current_choice = selected_startup
+        current_model_key = current_choice.key
         events = TranscriptEventSink(transcript, output)
 
         async def approve_tool(tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
@@ -72,6 +131,8 @@ async def main(argv: list[str] | None = None) -> int:
         # Delegation is routing, not workspace execution. The subagent's
         # inherited policy still gates the actual read/write/shell operation.
         root_permissions = AlwaysAllow()
+
+    compaction = CompactionManager(provider)
 
     base_tools: list[Tool] = [ReadFileTool(), WriteFileTool(), BashTool()]
     profiles = build_default_profiles(base_tools)
@@ -93,7 +154,11 @@ async def main(argv: list[str] | None = None) -> int:
     context = ToolContext(config.working_directory)
 
     def create_subagent(profile: SubagentProfile) -> Agent:
-        subagent_provider = build_provider(config)
+        subagent_provider = (
+            build_provider_for_choice(current_choice)
+            if current_choice is not None
+            else build_provider(config)
+        )
         subagent_provider.system = profile.system_prompt
         subagent_permissions = {
             "auto_allow": AlwaysAllow(),
@@ -143,6 +208,38 @@ async def main(argv: list[str] | None = None) -> int:
         before_send=load_global_mcp_tools,
     )
 
+    def select_model(identifier: str) -> str:
+        nonlocal current_choice, current_model_key, provider
+        choice = model_catalog.find(identifier)
+        selected_provider = build_provider_for_choice(choice)
+        selected_provider.system = provider.system
+        provider = selected_provider
+        current_choice = choice
+        current_model_key = choice.key
+        agent.provider = selected_provider
+        compaction.set_provider(selected_provider)
+        command_context.provider = selected_provider
+        return f"model: {choice.key} — {choice.name}"
+
+    def active_provider_name() -> str:
+        return current_choice.provider if current_choice is not None else config.provider_name
+
+    def active_model_key() -> str | None:
+        return current_model_key
+
+    async def pick_model() -> str:
+        if input_adapter is None or output is None:
+            return model_catalog.describe(current_model_key)
+        options = list(model_catalog.statuses())
+        with output.suspend():
+            selected = await input_adapter.pick_model(options, current_model_key)
+        if selected is None:
+            return "model selection cancelled"
+        try:
+            return select_model(selected)
+        except (ValueError, RuntimeError) as exc:
+            return f"model selection failed: {exc}"
+
     if config.non_interactive:
         prompt = config.prompt if config.prompt is not None else sys.stdin.read()
         try:
@@ -150,7 +247,7 @@ async def main(argv: list[str] | None = None) -> int:
                 agent,
                 prompt,
                 output=config.output,
-                provider=config.provider_name,
+                provider=active_provider_name(),
                 model=provider.model,
                 working_directory=config.working_directory,
                 compaction=compaction.strategy_name,
@@ -161,7 +258,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     output.write(
         format_startup_message(
-            provider=config.provider_name,
+            provider=active_provider_name(),
             model=provider.model,
             working_directory=config.working_directory,
             compaction=compaction.strategy_name,
@@ -178,7 +275,7 @@ async def main(argv: list[str] | None = None) -> int:
         subagents=subagents,
         transcript=transcript,
         runtime_info=lambda: format_runtime_configuration(
-            provider=config.provider_name,
+            provider=active_provider_name(),
             model=provider.model,
             working_directory=config.working_directory,
             compaction=compaction.strategy_name,
@@ -186,6 +283,10 @@ async def main(argv: list[str] | None = None) -> int:
             tui=TUI_NAME,
         ),
         mcp=mcp_manager,
+        model_catalog=model_catalog,
+        select_model=select_model,
+        current_model_key=active_model_key,
+        model_picker=pick_model,
     )
     try:
         await InteractiveRunner(input_adapter, output, OperationController()).run(

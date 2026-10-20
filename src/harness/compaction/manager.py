@@ -50,6 +50,11 @@ class CompactionManager:
     def set_mode(self, mode: str) -> None:
         self.strategy = self._strategy_for(mode)
 
+    def set_provider(self, provider: Provider) -> None:
+        self.provider = provider
+        if isinstance(self.strategy, Summarize):
+            self.strategy.provider = provider
+
     @property
     def strategy_name(self) -> str:
         return self._strategy_name(self.strategy)

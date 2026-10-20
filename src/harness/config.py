@@ -27,7 +27,7 @@ def parse_config(argv: Sequence[str] | None = None) -> HarnessConfig:
     parser = argparse.ArgumentParser(description="Run the Python Harness.")
     parser.add_argument(
         "--provider",
-        choices=("openai", "anthropic"),
+        choices=("openai", "anthropic", "local"),
         default=os.environ.get("HARNESS_PROVIDER", "openai"),
     )
     parser.add_argument("--model", default=os.environ.get("HARNESS_MODEL"))

@@ -4,11 +4,12 @@ import asyncio
 import getpass
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
 from harness.api.types import ToolDefinition
+from harness.model_selection import ModelOption
 from harness.transcript import TranscriptEntry, TranscriptUpdateEvent
 
 
@@ -82,6 +83,25 @@ class TerminalUI:
         return await asyncio.to_thread(
             getpass.getpass, f"Enter {variable} (kept only for this session): "
         )
+
+    async def pick_model(
+        self,
+        options: Sequence[ModelOption],
+        current: str | None = None,
+    ) -> str | None:
+        del current
+        print("Available models:")
+        for index, option in enumerate(options, start=1):
+            status = "ready" if option.available else f"unavailable: {option.reason}"
+            print(f"  {index}. {option.key} — {option.name} [{status}]")
+        answer = await asyncio.to_thread(input, "Select a model number (blank to cancel): ")
+        if not answer.strip():
+            return None
+        try:
+            index = int(answer) - 1
+            return list(options)[index].key
+        except (ValueError, IndexError):
+            return None
 
     async def read(self) -> str:
         return await asyncio.to_thread(input, "❯ ")

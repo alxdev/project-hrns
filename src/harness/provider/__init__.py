@@ -6,11 +6,27 @@ from .base import (
     ProviderTextDelta,
     StreamingProvider,
 )
+from .local_models import (
+    LocalModelDefinition,
+    LocalModelProvider,
+    LocalModelsDefinition,
+    LocalOpenAICompatibleProvider,
+    LocalProvider,
+    LocalProviderDefinition,
+    load_local_models,
+    resolve_local_model,
+)
 from .mock import MockProvider
 from .openai import OpenAIProvider
 
 __all__ = [
     "AnthropicProvider",
+    "LocalModelDefinition",
+    "LocalModelProvider",
+    "LocalModelsDefinition",
+    "LocalOpenAICompatibleProvider",
+    "LocalProvider",
+    "LocalProviderDefinition",
     "MockProvider",
     "OpenAIProvider",
     "Provider",
@@ -18,4 +34,6 @@ __all__ = [
     "ProviderStreamEvent",
     "ProviderTextDelta",
     "StreamingProvider",
+    "load_local_models",
+    "resolve_local_model",
 ]
