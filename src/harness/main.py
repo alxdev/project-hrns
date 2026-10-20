@@ -49,25 +49,62 @@ def build_provider(
     raise ValueError(f"unsupported provider: {config.provider_name}")
 
 
+EXIT_MODEL_KEY = "__exit__"
+
+
+async def choose_startup_model(
+    input_adapter: Any,
+    output: Any,
+    model_catalog: ModelCatalog,
+    config: HarnessConfig,
+) -> tuple[Any, ModelChoice] | None:
+    """Show the startup model picker and build the selected provider."""
+    statuses = model_catalog.statuses()
+    status_by_key = {status.choice.key: status for status in statuses}
+    values = [(status.choice.key, status.label()) for status in statuses]
+    values.append((EXIT_MODEL_KEY, "Exit application"))
+    current = model_catalog.preferred_key(config.provider_name, config.model)
+    if current is None or not status_by_key[current].available:
+        current = next(
+            (status.choice.key for status in statuses if status.available),
+            EXIT_MODEL_KEY,
+        )
+    picker = getattr(input_adapter, "pick_model", None)
+    if picker is None:
+        ready = next((status for status in statuses if status.available), None)
+        if ready is None:
+            return None
+        return build_provider_for_choice(ready.choice), ready.choice
+
+    while True:
+        selected = await picker(
+            values,
+            current,
+            "Select startup model",
+            "Select a model to start (entries show readiness; Esc or Exit cancels)",
+        )
+        if selected is None or selected == EXIT_MODEL_KEY:
+            return None
+        status = status_by_key.get(selected)
+        if status is None:
+            output.error(f"unknown startup model: {selected}")
+            continue
+        if not status.available:
+            output.error(f"{status.choice.key} is unavailable: {status.reason}")
+            continue
+        try:
+            return build_provider_for_choice(status.choice), status.choice
+        except ValueError as exc:
+            output.error(f"{status.choice.key} is unavailable: {exc}")
+
+
 async def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     config = parse_config(argv)
     model_catalog = ModelCatalog.load(Path.cwd())
     commands = build_default_commands()
-    provider = build_provider(config)
     current_model_key: str | None = None
     current_choice: ModelChoice | None = None
-    for choice in model_catalog.choices:
-        if config.provider_name == "local":
-            if choice.provider == "local" and choice.model.endswith(f"/{provider.model}"):
-                current_choice = choice
-                current_model_key = choice.key
-                break
-        elif choice.provider == config.provider_name and choice.model == provider.model:
-            current_choice = choice
-            current_model_key = choice.key
-            break
-    compaction = CompactionManager(provider)
     transcript = Transcript()
     events: Any
     permissions: Any
@@ -76,6 +113,11 @@ async def main(argv: list[str] | None = None) -> int:
     output: Any = None
 
     if config.non_interactive:
+        try:
+            provider = build_provider(config)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         events = TranscriptEventSink(transcript, NullEventSink())
         permissions = AlwaysAllow() if config.allow_tools else AlwaysDeny()
         root_permissions = AlwaysAllow()
@@ -85,6 +127,12 @@ async def main(argv: list[str] | None = None) -> int:
         from harness.ui.prompt_toolkit_rich import TUI_NAME, create_ui
 
         input_adapter, output = create_ui(config.history_file)
+        selected_startup = await choose_startup_model(input_adapter, output, model_catalog, config)
+        if selected_startup is None:
+            output.write("startup cancelled")
+            return 0
+        provider, current_choice = selected_startup
+        current_model_key = current_choice.key
         events = TranscriptEventSink(transcript, output)
 
         async def approve_tool(tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
@@ -95,6 +143,8 @@ async def main(argv: list[str] | None = None) -> int:
         # Delegation is routing, not workspace execution. The subagent's
         # inherited policy still gates the actual read/write/shell operation.
         root_permissions = AlwaysAllow()
+
+    compaction = CompactionManager(provider)
 
     base_tools: list[Tool] = [ReadFileTool(), WriteFileTool(), BashTool()]
     profiles = build_default_profiles(base_tools)

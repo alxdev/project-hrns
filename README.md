@@ -95,8 +95,11 @@ Use `OPENAI_API_KEY` for OpenAI or `ANTHROPIC_API_KEY` for Anthropic.
 
 Available models are cataloged in `local_models.json` and
 `cloud_models.json`. Use `/models` to list them and `/models provider/model` to
-switch the active provider and model. In the Rich/prompt-toolkit UI, `/models`
-opens a keyboard picker; `/models list` prints the catalog without opening it.
+switch the active provider and model. In the Rich/prompt-toolkit UI, the
+harness opens a keyboard picker at startup and `/models` opens it again later;
+entries show whether their configuration is ready, including missing cloud API
+key environment variables. Cancel exits the application. `/models list` prints
+the catalog without opening it.
 Cloud catalog entries may specify an `apiKeyEnv` value; the secret itself
 remains in the environment rather than in JSON. Start with `--provider local`
 to use the local catalog's default model.

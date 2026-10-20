@@ -26,6 +26,19 @@ class ModelChoice:
 
 
 @dataclass(frozen=True)
+class ModelStatus:
+    """Startup readiness information for one catalog entry."""
+
+    choice: ModelChoice
+    available: bool
+    reason: str | None = None
+
+    def label(self) -> str:
+        state = "[ready]" if self.available else f"[unavailable: {self.reason}]"
+        return f"{state} {self.choice.key} — {self.choice.name}"
+
+
+@dataclass(frozen=True)
 class ModelCatalog:
     choices: tuple[ModelChoice, ...]
 
@@ -67,6 +80,50 @@ class ModelCatalog:
             marker = " *" if choice.key == current else ""
             lines.append(f"  {choice.key} — {choice.name}{marker}")
         return "\n".join(lines)
+
+    def statuses(self) -> tuple[ModelStatus, ...]:
+        statuses: list[ModelStatus] = []
+        for choice in self.choices:
+            if choice.provider in {"openai", "anthropic"}:
+                api_key_env = self.api_key_env(choice)
+                if api_key_env and not os.environ.get(api_key_env):
+                    statuses.append(
+                        ModelStatus(
+                            choice,
+                            False,
+                            f"{api_key_env} is not set",
+                        )
+                    )
+                    continue
+            try:
+                build_provider_for_choice(choice)
+            except ValueError as exc:
+                statuses.append(ModelStatus(choice, False, str(exc)))
+            else:
+                statuses.append(ModelStatus(choice, True))
+        return tuple(statuses)
+
+    def preferred_key(self, provider_name: str, model: str | None) -> str | None:
+        for choice in self.choices:
+            if choice.provider != provider_name:
+                continue
+            if model is None:
+                return choice.key
+            if choice.provider == "local":
+                if choice.model == model or choice.model.endswith(f"/{model}"):
+                    return choice.key
+            elif choice.model == model:
+                return choice.key
+        return None
+
+    @staticmethod
+    def api_key_env(choice: ModelChoice) -> str | None:
+        if choice.provider not in {"openai", "anthropic"}:
+            return None
+        configured = choice.options.get("apiKeyEnv")
+        if isinstance(configured, str) and configured:
+            return configured
+        return f"{choice.provider.upper()}_API_KEY"
 
 
 ConfiguredProvider = OpenAIProvider | AnthropicProvider | LocalProvider

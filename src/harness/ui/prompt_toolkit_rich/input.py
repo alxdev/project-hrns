@@ -50,6 +50,8 @@ class PromptToolkitInput:
         self,
         values: list[tuple[str, str]],
         current: str | None = None,
+        title: str = "Models",
+        text: str = "Select a model (↑/↓ to move, Enter to select, Esc to cancel)",
     ) -> str | None:
         radio_list = RadioList(values=values, default=current)
 
@@ -61,13 +63,10 @@ class PromptToolkitInput:
             get_app().exit(result=None)
 
         dialog = Dialog(
-            title="Models",
+            title=title,
             body=HSplit(
                 [
-                    Label(
-                        text="Select a model (↑/↓ to move, Enter to select, Esc to cancel)",
-                        dont_extend_height=True,
-                    ),
+                    Label(text=text, dont_extend_height=True),
                     radio_list,
                 ],
                 padding=1,

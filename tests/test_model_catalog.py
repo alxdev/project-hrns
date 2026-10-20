@@ -49,3 +49,26 @@ def test_cloud_model_api_key_env_is_used(monkeypatch):
     )
 
     assert provider.model == "model"
+
+
+def test_catalog_statuses_report_missing_cloud_credentials(monkeypatch):
+    from harness.model_catalog import ModelCatalog, ModelChoice
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    catalog = ModelCatalog(
+        (
+            ModelChoice(
+                key="openai/gpt-4o-mini",
+                provider="openai",
+                model="gpt-4o-mini",
+                name="GPT-4o Mini",
+                options={},
+            ),
+        )
+    )
+
+    status = catalog.statuses()[0]
+
+    assert not status.available
+    assert status.reason == "OPENAI_API_KEY is not set"
+    assert "unavailable" in status.label()
