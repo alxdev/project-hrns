@@ -10,7 +10,10 @@ other interfaces can be added without changing the agent loop.
 
 - `src/harness/agent/` contains the asynchronous agent loop.
 - `src/harness/provider/` contains provider adapters and the deterministic mock.
-- `src/harness/tools/` contains workspace tools and their registry.
+- `src/harness/tools/` contains tool protocols and the registry; built-in
+  implementations live in `src/harness/tools/handlers/`.
+- `tools.json` defines built-in tool metadata and handler mappings.
+- `subagents.json` defines the profiles available in this working directory.
 - `src/harness/subagents/` contains profiles, delegation, and lifecycle tracking.
 - `src/harness/commands/` contains interactive slash commands.
 - `src/harness/compaction/` contains conversation compaction strategies.

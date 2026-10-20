@@ -1,0 +1,41 @@
+{
+  "tools": {
+    "read_file": {
+      "handler": "read_file",
+      "description": "Read a UTF-8 text file relative to the working directory.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "File path."}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      }
+    },
+    "write_file": {
+      "handler": "write_file",
+      "description": "Write UTF-8 text to a file relative to the working directory.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "File path."},
+          "content": {"type": "string", "description": "Text to write."}
+        },
+        "required": ["path", "content"],
+        "additionalProperties": false
+      }
+    },
+    "bash": {
+      "handler": "bash",
+      "description": "Run a shell command in the working directory.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string", "description": "Shell command."}
+        },
+        "required": ["command"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

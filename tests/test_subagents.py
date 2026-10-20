@@ -9,9 +9,9 @@ from harness.subagents import (
     load_profiles,
 )
 from harness.tools.base import ToolContext
-from harness.tools.bash import BashTool
-from harness.tools.read_file import ReadFileTool
-from harness.tools.write_file import WriteFileTool
+from harness.tools.loader import load_tools
+
+BUILTIN_TOOLS_PATH = Path(__file__).parents[1] / "tools.json"
 
 
 class FakeAgent:
@@ -23,7 +23,9 @@ class FakeAgent:
         return f"handled: {prompt}"
 
 
-def configured_profiles(tmp_path, tools=()):
+def configured_profiles(tmp_path, tools=None):
+    if tools is None:
+        tools = load_tools(BUILTIN_TOOLS_PATH)
     path = tmp_path / "subagents.json"
     tool_names = {tool.definition.name for tool in tools}
     path.write_text(
@@ -62,7 +64,7 @@ def configured_profiles(tmp_path, tools=()):
 
 
 def test_profiles_load_from_json_with_curated_tools(tmp_path):
-    profiles = configured_profiles(tmp_path, [ReadFileTool(), WriteFileTool(), BashTool()])
+    profiles = configured_profiles(tmp_path, load_tools(BUILTIN_TOOLS_PATH))
 
     assert [tool.definition.name for tool in profiles["explorer"].tools] == ["read_file"]
     assert profiles["explorer"].permission_mode == "inherit"
@@ -86,7 +88,7 @@ def test_missing_or_empty_config_disables_subagents(tmp_path):
 
 
 def test_agent_description_lists_profile_summary_and_tools(tmp_path):
-    manager = SubagentManager(lambda _profile: FakeAgent(), configured_profiles(tmp_path))
+    manager = SubagentManager(lambda _profile: FakeAgent(), configured_profiles(tmp_path, []))
 
     description = manager.describe()
 
@@ -103,7 +105,7 @@ async def test_manager_reuses_agent_and_tracks_records(tmp_path):
         created.append(agent)
         return agent
 
-    manager = SubagentManager(factory, configured_profiles(tmp_path))
+    manager = SubagentManager(factory, configured_profiles(tmp_path, []))
 
     first = await manager.delegate("explorer", "inspect the project")
     second = await manager.delegate("explorer", "inspect the tests")
@@ -121,7 +123,7 @@ async def test_delegation_tool_returns_subagent_result(tmp_path):
     def factory(_profile):
         return FakeAgent()
 
-    profiles = configured_profiles(tmp_path)
+    profiles = configured_profiles(tmp_path, [])
     manager = SubagentManager(factory, profiles)
     tool = DelegationTool("explorer", profiles["explorer"].description)
     tool.bind(manager)

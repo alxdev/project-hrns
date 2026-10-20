@@ -17,7 +17,7 @@ from harness.provider import MockProvider
 from harness.subagents import SubagentManager, SubagentProfile
 from harness.subagents.tools import DelegationTool
 from harness.tools.base import ToolContext
-from harness.tools.read_file import ReadFileTool
+from harness.tools.loader import load_tools
 from harness.tools.registry import ToolRegistry
 from harness.transcript import Transcript
 
@@ -75,6 +75,14 @@ def profile(name, tools=(), requires_tools=False):
         tools=tuple(tools),
         permission_mode="inherit",
         requires_tools=requires_tools,
+    )
+
+
+def read_file_tool():
+    return next(
+        tool
+        for tool in load_tools(Path(__file__).parents[1] / "tools.json")
+        if tool.definition.name == "read_file"
     )
 
 
@@ -393,7 +401,7 @@ async def test_subagent_discovers_tools_before_agent_factory():
 
 
 def test_tools_and_agents_commands_show_scoped_mcp_tools_and_descriptions():
-    profiles = {"explorer": profile("explorer", [ReadFileTool()])}
+    profiles = {"explorer": profile("explorer", [read_file_tool()])}
     subagents = SubagentManager(lambda _profile: None, profiles)
 
     class MCPView:

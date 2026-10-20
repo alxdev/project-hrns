@@ -1,12 +1,21 @@
 import asyncio
+from pathlib import Path
 
 from harness.agent import Agent
 from harness.api.types import ProviderResponse, TextBlock, ToolCall, ToolDefinition
 from harness.permissions import PermissionDecision
 from harness.provider import MockProvider
 from harness.tools.base import ToolContext
-from harness.tools.read_file import ReadFileTool
+from harness.tools.loader import load_tools
 from harness.tools.registry import ToolRegistry
+
+BUILTIN_TOOLS_PATH = Path(__file__).parents[1] / "tools.json"
+
+
+def read_file_tool():
+    return next(
+        tool for tool in load_tools(BUILTIN_TOOLS_PATH) if tool.definition.name == "read_file"
+    )
 
 
 class AllowAll:
@@ -32,7 +41,7 @@ async def test_agent_completes_after_tool_call(tmp_path):
     (tmp_path / "hello.txt").write_text("hello", encoding="utf-8")
     agent = Agent(
         provider=provider,
-        tools=ToolRegistry([ReadFileTool()]),
+        tools=ToolRegistry([read_file_tool()]),
         permissions=AllowAll(),
         context=ToolContext(tmp_path),
     )
@@ -58,7 +67,7 @@ async def test_denied_tool_is_returned_as_error_result(tmp_path):
 
     agent = Agent(
         provider=provider,
-        tools=ToolRegistry([ReadFileTool()]),
+        tools=ToolRegistry([read_file_tool()]),
         permissions=DenyAll(),
         context=ToolContext(tmp_path),
     )

@@ -266,6 +266,48 @@ The repository's `subagents.json` provides the current explorer, coder, and
 Gmail profiles. Copy or create this file in another working directory to
 configure the profiles available there.
 
+## Built-in tool configuration
+
+Built-in tools are described in `tools.json` in the configured working
+directory. The catalog is authoritative; if it is missing or contains an
+empty `tools` object, no built-in tools are loaded. Each entry supplies the
+tool name, model-facing metadata, input schema, and the Python handler module:
+
+```json
+{
+  "tools": {
+    "math": {
+      "handler": "math",
+      "description": "Perform an arithmetic calculation.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "expression": {"type": "string"}
+        },
+        "required": ["expression"],
+        "additionalProperties": false
+      }
+    }
+  }
+}
+```
+
+To add a tool to this harness:
+
+1. Add `src/harness/tools/handlers/math.py`.
+2. Export an async `execute(context, arguments)` function that returns a
+   `ToolResult`. Keep filesystem, process, and other execution behavior in
+   this Python handler.
+3. Add the matching `math` entry to `tools.json`. The `handler` value must
+   match the handler filename and must be a simple module name.
+4. Add `math` to a profile's `tools` array in `subagents.json` if a subagent
+   should be allowed to use it.
+5. Restart the harness after changing the JSON catalog or Python handler.
+
+Handlers are trusted Python code loaded only from the harness's
+`harness.tools.handlers` package. JSON controls the tool definition exposed to
+the model; it does not bypass permission checks or create executable behavior.
+
 ## Architecture
 
 ```text

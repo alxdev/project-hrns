@@ -31,11 +31,9 @@ from harness.subagents import (
     SubagentProfile,
     load_profiles,
 )
-from harness.tools.base import Tool, ToolContext
-from harness.tools.bash import BashTool
-from harness.tools.read_file import ReadFileTool
+from harness.tools.base import ToolContext
+from harness.tools.loader import load_tools
 from harness.tools.registry import ToolRegistry
-from harness.tools.write_file import WriteFileTool
 from harness.transcript import Transcript, TranscriptEventSink
 from harness.ui.protocols import InputAdapter, OutputRenderer
 
@@ -147,7 +145,15 @@ async def main(argv: list[str] | None = None) -> int:
 
     compaction = CompactionManager(provider)
 
-    base_tools: list[Tool] = [ReadFileTool(), WriteFileTool(), BashTool()]
+    try:
+        base_tools = load_tools(config.working_directory / "tools.json")
+    except ValueError as exc:
+        message = f"invalid tools.json: {exc}"
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+        return 2
     try:
         profiles = load_profiles(config.working_directory / "subagents.json", base_tools)
     except ValueError as exc:
