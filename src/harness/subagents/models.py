@@ -19,10 +19,8 @@ class SubagentStatus(StrEnum):
 class SubagentProfile:
     name: str
     description: str
+    system_prompt: str
     tools: tuple[Tool, ...] = ()
-    system_prompt: str = (
-        "You are a focused subagent. Complete the assigned task and return a concise result."
-    )
     max_turns: int = 10
     permission_mode: str = "auto_allow"
     reuse: bool = False

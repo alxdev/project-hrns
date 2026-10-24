@@ -6,7 +6,7 @@ need stateful conversations.
 
 ## Profiles
 
-The default profiles are:
+The profiles currently configured in this repository are:
 
 - `explorer` — read-only inspection through `read_file`
 - `coder` — `read_file`, `write_file`, and `bash`
@@ -14,12 +14,16 @@ The default profiles are:
   It cannot directly send mail and treats email content as untrusted input.
 
 Each profile also defines a system prompt, maximum turns, permission mode, and
-whether its `Agent` may be reused. Default profiles run with fresh isolated
-agent state for every delegation. Reuse is available for explicitly
-stateful profiles.
+whether its `Agent` may be reused. Profiles are loaded from
+`subagents.json` in the configured working directory. The file is authoritative:
+if it is missing or has no profiles, the harness has no subagents. Default
+configured profiles run with fresh isolated agent state for every delegation. Reuse is
+available for explicitly stateful profiles.
 
-Profiles are defined independently in `profiles.py`. Add a profile by creating
-a `SubagentProfile` with the tools it is allowed to use.
+The JSON profile name becomes the delegation profile name. Its `tools` array
+references built-in tool names; MCP-only profiles can use an empty array and
+set `requires_tools` to true. Add or remove profiles by editing the JSON file;
+tool implementations, permission checks, and MCP loading remain in Python.
 
 ## Delegation
 

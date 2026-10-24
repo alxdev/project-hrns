@@ -122,6 +122,17 @@ class Agent:
     before_send: Callable[[], Awaitable[None]] | None = None
 
     async def send(self, prompt: str) -> str:
+        messages_before_send = list(self.messages)
+        try:
+            return await self._send(prompt)
+        except asyncio.CancelledError:
+            # A cancelled operation may leave an assistant tool call without
+            # its required tool result. Remove the entire incomplete turn so
+            # the next request cannot send malformed provider history.
+            self.messages = messages_before_send
+            raise
+
+    async def _send(self, prompt: str) -> str:
         if self.before_send is not None:
             await self.before_send()
         self.messages.append(UserMessage(prompt))

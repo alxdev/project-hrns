@@ -1,7 +1,7 @@
 from .base import Subagent
 from .manager import SubagentManager
 from .models import SubagentProfile, SubagentRecord, SubagentStatus
-from .profiles import build_default_profiles
+from .profiles import load_profiles
 from .tools import DelegationTool
 
 __all__ = [
@@ -11,5 +11,5 @@ __all__ = [
     "SubagentProfile",
     "SubagentRecord",
     "SubagentStatus",
-    "build_default_profiles",
+    "load_profiles",
 ]
