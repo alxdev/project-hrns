@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import aclosing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from harness.api.types import (
@@ -88,6 +88,15 @@ class ToolResultEvent:
 
 
 @dataclass(frozen=True)
+class ToolLogEvent:
+    name: str
+    text: str
+    stream: str = "stderr"
+    agent: str = ""
+    log_prefix: str = ""
+
+
+@dataclass(frozen=True)
 class SubagentLifecycleEvent:
     profile: str
     record_id: str
@@ -120,6 +129,9 @@ class Agent:
     quiet: bool = False
     streaming: bool = True
     before_send: Callable[[], Awaitable[None]] | None = None
+
+    def __post_init__(self) -> None:
+        self.context = replace(self.context, tool_registry=self.tools)
 
     async def send(self, prompt: str) -> str:
         messages_before_send = list(self.messages)
@@ -155,6 +167,12 @@ class Agent:
                 return final_text
 
             results: list[ToolResult] = []
+            activated_skills = {
+                message.skill_name
+                for message in self.messages
+                if message.kind == "skill_activation" and message.skill_name
+            }
+            skill_context: list[Message] = []
             for call in calls:
                 await self.events.emit(
                     ToolCallEvent(
@@ -172,6 +190,18 @@ class Agent:
                 decision = await self.permissions.decide(definition, call.input)
                 if decision is PermissionDecision.DENY:
                     result = ToolResult(call.id, "user denied this tool call", is_error=True)
+                elif (
+                    call.name == "activate_skill"
+                    and isinstance(call.input.get("name"), str)
+                    and call.input["name"] in activated_skills
+                    and call.input["name"] in self.context.allowed_skills
+                    and any(item.name == call.name for item in self.tools.definitions())
+                ):
+                    result = ToolResult(
+                        call.id,
+                        f"Skill {call.input['name']!r} is already active; "
+                        "use its preserved instructions.",
+                    )
                 else:
                     await self.events.emit(
                         ToolExecutionEvent(
@@ -183,11 +213,28 @@ class Agent:
                     )
                     result = await self.tools.execute(self.context, call.name, call.input)
                     result = ToolResult(call.id, result.content, result.is_error)
+                    if call.name == "activate_skill" and not result.is_error:
+                        skill_name = str(call.input["name"])
+                        skill_context.append(
+                            UserMessage(
+                                result.content,
+                                preserve_from_compaction=True,
+                                kind="skill_activation",
+                                skill_name=skill_name,
+                            )
+                        )
+                        activated_skills.add(skill_name)
+                        result = ToolResult(
+                            call.id,
+                            f"Activated skill {skill_name!r}; "
+                            "its full instructions follow in preserved context.",
+                        )
                 results.append(result)
                 await self.events.emit(
                     ToolResultEvent(call.name, result, self.name, self.log_prefix)
                 )
             self.messages.append(Message(role="user", content=results))
+            self.messages.extend(skill_context)
         raise RuntimeError(f"agent exceeded maximum turns ({self.max_turns})")
 
     async def _request_response(self) -> tuple[ProviderResponse, bool]:

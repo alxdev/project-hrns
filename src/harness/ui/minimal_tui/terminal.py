@@ -32,6 +32,9 @@ class TerminalUI:
         elif entry.kind == "mcp_discovery" and not event.is_new:
             label = "error" if entry.status == "failed" else "info"
             print(f"[{label}] {entry.content}")
+        elif entry.kind == "tool_log":
+            prefix = entry.metadata.get("log_prefix", "")
+            print(f"{prefix}{entry.content}", file=sys.stderr)
 
     def _render_assistant(self, entry: TranscriptEntry, is_new: bool) -> None:
         if entry.status == "streaming":

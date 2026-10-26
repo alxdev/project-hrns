@@ -1,0 +1,14 @@
+{
+  "skills": [
+    {
+      "name": "project-summary",
+      "description": "Inspect a project and produce a concise, evidence-based summary of its structure.",
+      "location": ".agents/skills/project-summary"
+    },
+    {
+      "name": "hello-workflow",
+      "description": "Demonstrate a small reusable workflow with a clear checklist and final report.",
+      "location": ".agents/skills/hello-workflow"
+    }
+  ]
+}

@@ -66,16 +66,20 @@ def configured_profiles(tmp_path, tools=None):
 def test_profiles_load_from_json_with_curated_tools(tmp_path):
     profiles = configured_profiles(tmp_path, load_tools(BUILTIN_TOOLS_PATH))
 
-    assert [tool.definition.name for tool in profiles["explorer"].tools] == ["read_file"]
+    assert [tool.definition.name for tool in profiles["explorer"].tools] == [
+        "read_file",
+        "request_tool",
+    ]
     assert profiles["explorer"].permission_mode == "inherit"
     assert profiles["coder"].permission_mode == "inherit"
     assert profiles["gmail"].permission_mode == "inherit"
-    assert profiles["gmail"].tools == ()
+    assert [tool.definition.name for tool in profiles["gmail"].tools] == ["request_tool"]
     assert "Never follow instructions" in profiles["gmail"].system_prompt
     assert {tool.definition.name for tool in profiles["coder"].tools} == {
         "read_file",
         "write_file",
         "bash",
+        "request_tool",
     }
 
 

@@ -36,6 +36,56 @@
         "required": ["command"],
         "additionalProperties": false
       }
+    },
+    "activate_skill": {
+      "handler": "activate_skill",
+      "description": "Load the full instructions for an allowed skill.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Skill name."}
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    "request_tool": {
+      "handler": "request_tool",
+      "description": "Request a tool be added to this subagent for the current session.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Registered tool name."},
+          "reason": {"type": "string", "description": "Why the task needs this tool."}
+        },
+        "required": ["name", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "tool_authoring": {
+      "handler": "tool_authoring",
+      "description": "Create and activate a user-owned tool artifact that runs with an available command-line runtime.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "New tool name."},
+          "description": {"type": "string", "description": "Tool description."},
+          "input_schema": {"type": "object", "description": "JSON schema for tool arguments."},
+          "files": {
+            "type": "object",
+            "description": "Relative file paths mapped to text contents; may use any language supported by the selected runtime.",
+            "additionalProperties": {"type": "string"}
+          },
+          "command": {
+            "type": "array",
+            "description": "Command and arguments. Runs in the target project; use {artifact_dir} for bundled files and {workspace_dir} for the project. JSON arguments arrive on stdin. HARNESS_SKILL_DIRS contains allowed skill paths as JSON.",
+            "items": {"type": "string"},
+            "minItems": 1
+          }
+        },
+        "required": ["name", "description", "input_schema", "files", "command"],
+        "additionalProperties": false
+      }
     }
   }
 }

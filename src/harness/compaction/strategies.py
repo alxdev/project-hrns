@@ -35,6 +35,34 @@ def safe_split_point(messages: Sequence[Message], desired: int) -> int:
     return 0
 
 
+def _preserved(messages: Sequence[Message]) -> list[Message]:
+    """Preserve durable context and close any protected tool exchanges."""
+    preserved_indices = {
+        index for index, message in enumerate(messages) if message.preserve_from_compaction
+    }
+    exchanges: dict[str, set[int]] = {}
+    for index, message in enumerate(messages):
+        for block in message.content:
+            if isinstance(block, (ToolCall, ToolResult)):
+                call_id = block.id if isinstance(block, ToolCall) else block.tool_use_id
+                exchanges.setdefault(call_id, set()).add(index)
+    pending = list(preserved_indices)
+    while pending:
+        index = pending.pop()
+        for block in messages[index].content:
+            if isinstance(block, (ToolCall, ToolResult)):
+                call_id = block.id if isinstance(block, ToolCall) else block.tool_use_id
+                for companion in exchanges[call_id] - preserved_indices:
+                    preserved_indices.add(companion)
+                    pending.append(companion)
+    return [message for index, message in enumerate(messages) if index in preserved_indices]
+
+
+def _prepend_unique(preserved: Sequence[Message], recent: Sequence[Message]) -> list[Message]:
+    preserved_ids = {id(message) for message in preserved}
+    return [*preserved, *(message for message in recent if id(message) not in preserved_ids)]
+
+
 @dataclass(frozen=True)
 class NoCompaction:
     async def compact(self, messages: Sequence[Message]) -> list[Message]:
@@ -49,7 +77,11 @@ class SlidingWindow:
         if self.keep_last < 1 or len(messages) <= self.keep_last:
             return list(messages)
         split = safe_split_point(messages, len(messages) - self.keep_last)
-        return list(messages[split:]) if split else list(messages)
+        return (
+            _prepend_unique(_preserved(messages[:split]), messages[split:])
+            if split
+            else list(messages)
+        )
 
 
 @dataclass
@@ -70,14 +102,24 @@ class Summarize:
             return list(messages)
         old_messages = list(messages[:split])
         recent_messages = list(messages[split:])
-        prompt = f"{self.instructions}\n\nConversation:\n{render_transcript(old_messages)}"
+        preserved = _preserved(old_messages)
+        preserved_ids = {id(message) for message in preserved}
+        summarize_messages = [
+            message for message in old_messages if id(message) not in preserved_ids
+        ]
+        if not summarize_messages:
+            return _prepend_unique(preserved, recent_messages)
+        prompt = f"{self.instructions}\n\nConversation:\n{render_transcript(summarize_messages)}"
         response: ProviderResponse = await self.provider.send([UserMessage(prompt)], [])
         summary = "\n".join(
             block.text for block in response.content if isinstance(block, TextBlock)
         ).strip()
         if not summary:
             raise RuntimeError("summarization provider returned no text")
-        return [UserMessage(f"[Earlier conversation summary]\n{summary}"), *recent_messages]
+        return _prepend_unique(
+            preserved,
+            [UserMessage(f"[Earlier conversation summary]\n{summary}"), *recent_messages],
+        )
 
 
 @dataclass
@@ -137,4 +179,10 @@ def message_to_dict(message: Message) -> dict[str, object]:
                     "is_error": block.is_error,
                 }
             )
-    return {"role": message.role, "content": content}
+    return {
+        "role": message.role,
+        "content": content,
+        "preserve_from_compaction": message.preserve_from_compaction,
+        "kind": message.kind,
+        "skill_name": message.skill_name,
+    }

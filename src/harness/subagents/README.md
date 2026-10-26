@@ -20,6 +20,14 @@ if it is missing or has no profiles, the harness has no subagents. Default
 configured profiles run with fresh isolated agent state for every delegation. Reuse is
 available for explicitly stateful profiles.
 
+Profiles may also list portable skills in `skills`. The subagent receives a
+catalog of those skills and activates one with `activate_skill` when needed;
+the full skill instructions and supporting-file inventory are then loaded into
+that subagent's conversation. Skills do not grant tools. The harness adds the
+`request_tool` control tool to each profile so a subagent can ask for an
+installed capability during a session; saving that access to JSON is a
+separate approval.
+
 The JSON profile name becomes the delegation profile name. Its `tools` array
 references built-in tool names; MCP-only profiles can use an empty array and
 set `requires_tools` to true. Add or remove profiles by editing the JSON file;
@@ -64,6 +72,16 @@ subagent, even when the task is initiated interactively by the root agent.
 
 The `gmail` profile inherits the same tool approval policy. Interactive Gmail
 actions require approval, and Gmail MCP tools are scoped only to this profile.
+
+The optional `tool-builder` profile can use `tool_authoring` to create a
+user-owned command-backed tool under
+`~/.<harness-name>/tool-artifacts/`. It can use any command-line runtime
+installed on the system. The creating subagent can use it immediately; other
+subagents can request it by name, subject to approval. A separate approval can
+save access in a profile, and saved artifact names resolve after restart.
+Discovery does not automatically grant a tool to another subagent. Artifact
+commands run in the target project and receive explicit artifact and allowed
+skill paths through their environment.
 
 ## MCP tools
 

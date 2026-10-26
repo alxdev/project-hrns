@@ -8,7 +8,14 @@ BUILTIN_TOOLS_PATH = Path(__file__).parents[1] / "tools.json"
 
 def test_registry_definitions_are_sorted():
     registry = ToolRegistry(load_tools(BUILTIN_TOOLS_PATH))
-    assert [item.name for item in registry.definitions()] == ["bash", "read_file", "write_file"]
+    assert [item.name for item in registry.definitions()] == [
+        "activate_skill",
+        "bash",
+        "read_file",
+        "request_tool",
+        "tool_authoring",
+        "write_file",
+    ]
 
 
 def test_tool_metadata_comes_from_json(tmp_path):

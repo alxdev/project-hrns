@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from harness.api.types import Message, ProviderResponse, TextBlock, ToolCall, ToolResult
 from harness.compaction import (
     CompactionManager,
@@ -38,6 +40,31 @@ async def test_sliding_window_preserves_tool_pair():
     assert isinstance(compacted[1].content[0], ToolResult)
 
 
+async def test_sliding_window_preserves_skill_activation():
+    messages = [
+        Message("user", [TextBlock("activate the skill")]),
+        Message(
+            "user",
+            [TextBlock("skill instructions")],
+            preserve_from_compaction=True,
+            kind="skill_activation",
+            skill_name="example",
+        ),
+        Message("user", [TextBlock("continue")]),
+        Message("assistant", [TextBlock("recent answer")]),
+    ]
+
+    compacted = await SlidingWindow(keep_last=1).compact(messages)
+
+    assert any(message.kind == "skill_activation" for message in compacted)
+    assert any(
+        isinstance(message.content[0], TextBlock)
+        and message.content[0].text == "skill instructions"
+        for message in compacted
+    )
+    assert compacted[0].role == "user"
+
+
 async def test_summarize_replaces_old_history():
     provider = MockProvider([ProviderResponse([TextBlock("summary")], "end_turn")])
 
@@ -68,3 +95,81 @@ async def test_manager_report_describes_strategy_and_change():
     assert report.before_count == 5
     assert report.after_count == 4
     assert report.changed is True
+
+
+def assert_valid_tool_history(messages):
+    pending = set()
+    for message in messages:
+        for block in message.content:
+            if isinstance(block, ToolCall):
+                assert block.id not in pending
+                pending.add(block.id)
+            elif isinstance(block, ToolResult):
+                assert block.tool_use_id in pending
+                pending.remove(block.tool_use_id)
+        if pending:
+            assert message.role == "assistant"
+    assert not pending
+
+
+@pytest.mark.parametrize("mode", ["sliding", "summarize"])
+async def test_compaction_preserves_complete_legacy_activation_exchanges(mode):
+    messages = [
+        Message("user", [TextBlock("Inspect")]),
+        Message("assistant", [ToolCall("read", "read_file", {"path": "README.md"})]),
+        Message("user", [ToolResult("read", "unrelated file")]),
+        Message(
+            "assistant",
+            [ToolCall("skill", "activate_skill", {"name": "example"})],
+            preserve_from_compaction=True,
+        ),
+        Message(
+            "user", [ToolResult("skill", "FULL SKILL INSTRUCTIONS")], preserve_from_compaction=True
+        ),
+        Message("assistant", [TextBlock("Done")]),
+        Message("user", [TextBlock("Next")]),
+    ]
+    provider = MockProvider(
+        [ProviderResponse([TextBlock("summary")], "end_turn") for _ in range(3)]
+    )
+    strategy = (
+        SlidingWindow(keep_last=1)
+        if mode == "sliding"
+        else Summarize(provider, threshold=1, keep_recent=1)
+    )
+
+    for _ in range(3):
+        messages = await strategy.compact(messages)
+        assert_valid_tool_history(messages)
+        assert any(
+            isinstance(block, ToolResult) and block.content == "FULL SKILL INSTRUCTIONS"
+            for message in messages
+            for block in message.content
+        )
+
+
+@pytest.mark.parametrize("mode", ["sliding", "summarize"])
+async def test_durable_skill_survives_without_retaining_unrelated_tool_output(mode):
+    skill = Message(
+        "user",
+        [TextBlock("FULL INSTRUCTIONS\n" * 100)],
+        preserve_from_compaction=True,
+        kind="skill_activation",
+        skill_name="example",
+    )
+    messages = [*history()[:3], skill, *history()[3:]]
+    provider = MockProvider([ProviderResponse([TextBlock("summary")], "end_turn")])
+    strategy = (
+        SlidingWindow(keep_last=1)
+        if mode == "sliding"
+        else Summarize(provider, threshold=1, keep_recent=1)
+    )
+
+    result = await strategy.compact(messages)
+
+    assert skill in result
+    assert result.count(skill) == 1
+    assert_valid_tool_history(result)
+    assert not any(isinstance(block, ToolResult) for message in result for block in message.content)
+    if mode == "summarize":
+        assert "FULL INSTRUCTIONS" not in provider.calls[0][0][0].content[0].text

@@ -34,14 +34,39 @@ ContentBlock: TypeAlias = TextBlock | ToolCall | ToolResult
 class Message:
     role: Role
     content: Sequence[ContentBlock] = field(default_factory=list)
+    preserve_from_compaction: bool = False
+    kind: str = ""
+    skill_name: str = ""
 
 
-def UserMessage(text: str) -> Message:
-    return Message(role="user", content=[TextBlock(text)])
+def UserMessage(
+    text: str,
+    *,
+    preserve_from_compaction: bool = False,
+    kind: str = "",
+    skill_name: str = "",
+) -> Message:
+    return Message(
+        role="user",
+        content=[TextBlock(text)],
+        preserve_from_compaction=preserve_from_compaction,
+        kind=kind,
+        skill_name=skill_name,
+    )
 
 
-def AssistantMessage(content: Sequence[ContentBlock]) -> Message:
-    return Message(role="assistant", content=list(content))
+def AssistantMessage(
+    content: Sequence[ContentBlock],
+    *,
+    preserve_from_compaction: bool = False,
+    kind: str = "",
+) -> Message:
+    return Message(
+        role="assistant",
+        content=list(content),
+        preserve_from_compaction=preserve_from_compaction,
+        kind=kind,
+    )
 
 
 @dataclass(frozen=True)

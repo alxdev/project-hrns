@@ -21,6 +21,7 @@ class SubagentProfile:
     description: str
     system_prompt: str
     tools: tuple[Tool, ...] = ()
+    skills: tuple[str, ...] = ()
     max_turns: int = 10
     permission_mode: str = "auto_allow"
     reuse: bool = False

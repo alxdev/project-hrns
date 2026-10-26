@@ -4,7 +4,7 @@ The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
 changing the agent loop.
 
-## Current status: Phase 7 — MCP tool integration
+## Current status: Phase 8 — Skills and extensible tool capabilities
 
 Phase 1 establishes the smallest useful harness:
 
@@ -266,6 +266,106 @@ The repository's `subagents.json` provides the current explorer, coder, and
 Gmail profiles. Copy or create this file in another working directory to
 configure the profiles available there.
 
+## Skills
+
+Skills use the portable Agent Skills directory convention. The harness
+discovers skills from `.agents/skills/` in the configured project and from
+`~/.agents/skills/` for user-wide skills. A skill directory contains a
+`SKILL.md` with standard `name` and `description` frontmatter; supporting files
+may live anywhere below that directory.
+
+The optional project `skills.json` file is a small registry containing only
+the skill catalog metadata and location. It can override the description or
+location discovered from a standard directory:
+
+```json
+{
+  "skills": [
+    {
+      "name": "project-summary",
+      "description": "Inspect a project and summarize its structure.",
+      "location": ".agents/skills/project-summary"
+    }
+  ]
+}
+```
+
+Subagent profiles opt into skills with their `skills` array in
+`subagents.json`. The harness adds those skills to that subagent's catalog;
+the model calls `activate_skill` when it needs the full `SKILL.md`. Activation
+also reports the skill directory and all supporting files, so a skill can use
+its own arbitrary layout. Skill instructions are workflow guidance and do not
+grant tools or permissions. The root orchestrator does not receive the
+subagent skill catalog automatically; it only receives the project
+`AGENTS.md` context and delegates focused work.
+
+Each successful activation adds one protected instruction message containing
+the complete skill content. Repeated activation reuses that message. Failed
+activations and unrelated tool output are not protected. Compaction preserves
+the instructions intact while safely dropping old tool exchanges; protected
+tool exchanges from older histories are retained as complete pairs. An empty
+profile `skills` array permits no skill activation, even if the subagent
+requests access to `activate_skill`.
+
+## Dynamic tool capabilities
+
+Every configured subagent receives the `request_tool` control tool. If a
+subagent needs a built-in or artifact tool that is installed but not in its profile, it
+can explain why and request it. The harness asks for approval, adds the tool
+to the current subagent session, and returns control to the model so it can
+retry with the new definition. A second, separate approval asks whether that
+access should be saved to the profile's `tools` array in `subagents.json`.
+Requests execute through the configured tool handler and registry, so an
+unregistered request tool cannot grant access. Profile saves re-read the file
+after approval, serialize updates within the process, and replace the file
+atomically to preserve edits made while the prompt was open.
+
+The `tool_authoring` tool is separate from ordinary tool activation. An
+authorized tool-builder can create a command-backed tool artifact under
+`~/.<harness-name>/tool-artifacts/<tool-name>/`, containing a `manifest.json`
+and its supporting files. Set the harness identity with `--harness-name` or
+`HARNESS_NAME`; by default it uses the installed package name. The artifact
+command can use any installed runtime, such as Python, Node, or a compiled
+program. The harness sends tool arguments as JSON on stdin, returns stdout as
+the tool result, and surfaces stderr as diagnostics. The artifact is validated
+and registered for the current session without modifying the harness
+installation or the target project; existing artifacts are never overwritten.
+Other subagents can request the created tool by name through `request_tool`.
+Saved artifact names also resolve when profiles load after restarting. Saving
+access to a profile remains a separate approval; discovery never grants
+access or executes artifact code. Creating and using the artifact still go
+through normal tool approval. Review authored commands and files before reuse.
+
+For example, a Node artifact can include `main.js` and use a manifest command
+such as `["node", "{artifact_dir}/main.js"]`. The command runs with the target
+project as its working directory, reads one JSON object from stdin, and writes
+its result to stdout. Simple relative arguments naming bundled files (such as
+`main.js`) also resolve to the artifact directory. Commands can use
+`{workspace_dir}` for an explicit project path. The environment supplies:
+
+- `HARNESS_WORKSPACE_DIR`: the target project's absolute path.
+- `HARNESS_ARTIFACT_DIR`: the artifact's absolute path.
+- `HARNESS_SKILL_DIRS`: a JSON object mapping the current subagent's allowed
+  skill names to their absolute directories.
+
+The data directory name can also be configured without changing the artifact format:
+
+```sh
+HARNESS_NAME=my-agent-harness python -m harness
+# or
+python -m harness --harness-name my-agent-harness
+```
+
+Tool handlers use stdout-style tool results for model-visible structured
+output. Bash stderr is surfaced as operational progress in the terminal UI
+and transcript, without creating an extra provider request for each line; a
+failed command also returns a concise stderr diagnostic in its tool result.
+Shell and artifact commands share the process runner in `tools/process.py`,
+including stderr streaming and POSIX process-group cancellation. Artifact
+command preparation lives in `tools/artifacts.py`; `tools/loader.py` loads and
+validates definitions. Artifacts use one `files`/`command` format for every
+language, including Python.
+
 ## Built-in tool configuration
 
 Built-in tools are described in `tools.json` in the configured working
@@ -304,9 +404,11 @@ To add a tool to this harness:
    should be allowed to use it.
 5. Restart the harness after changing the JSON catalog or Python handler.
 
-Handlers are trusted Python code loaded only from the harness's
-`harness.tools.handlers` package. JSON controls the tool definition exposed to
-the model; it does not bypass permission checks or create executable behavior.
+Handlers in the project `tools.json` are trusted Python code loaded from the
+harness's `harness.tools.handlers` package. JSON controls the tool definition
+exposed to the model; it does not bypass permission checks or create
+executable behavior. User-authored handlers are the separate artifacts
+described above and are loaded only after the authoring tool creates them.
 
 ## Architecture
 

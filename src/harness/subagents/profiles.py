@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +12,9 @@ from .models import SubagentProfile
 PERMISSION_MODES = frozenset({"auto_allow", "inherit", "ask", "deny"})
 
 
-def load_profiles(path: Path, tools: Iterable[Tool]) -> dict[str, SubagentProfile]:
+def load_profiles(
+    path: Path, tools: Iterable[Tool] | Mapping[str, Tool]
+) -> dict[str, SubagentProfile]:
     """Load user-configured subagent profiles from JSON.
 
     A missing file is equivalent to an empty profile set. The file is
@@ -33,7 +35,9 @@ def load_profiles(path: Path, tools: Iterable[Tool]) -> dict[str, SubagentProfil
     if not isinstance(raw, dict) or not isinstance(raw.get("profiles"), dict):
         raise ValueError(f"{path} must contain a 'profiles' object")
 
-    tool_by_name = {tool.definition.name: tool for tool in tools}
+    tool_by_name = (
+        tools if isinstance(tools, Mapping) else {tool.definition.name: tool for tool in tools}
+    )
     profiles: dict[str, SubagentProfile] = {}
     for name, config in raw["profiles"].items():
         profiles[name] = _build_profile(path, name, config, tool_by_name)
@@ -44,7 +48,7 @@ def _build_profile(
     path: Path,
     name: object,
     config: object,
-    tool_by_name: dict[str, Tool],
+    tool_by_name: Mapping[str, Tool],
 ) -> SubagentProfile:
     if not isinstance(name, str) or not name.strip() or name != name.strip():
         raise ValueError(f"{path} profile names must be non-empty trimmed strings")
@@ -70,6 +74,21 @@ def _build_profile(
             raise ValueError(f"{path} profile {name!r} references unknown tool {tool_name!r}")
         selected_tools.append(tool)
 
+    configured_skills = config.get("skills", [])
+    if not isinstance(configured_skills, list) or not all(
+        isinstance(skill_name, str) and skill_name.strip() for skill_name in configured_skills
+    ):
+        raise ValueError(f"{path} profile {name!r} skills must be an array of strings")
+    skill_names = tuple(configured_skills)
+    selected_names = {tool.definition.name for tool in selected_tools}
+    for control_tool in ("request_tool", "activate_skill"):
+        if (
+            control_tool in tool_by_name
+            and (control_tool == "request_tool" or skill_names)
+            and control_tool not in selected_names
+        ):
+            selected_tools.append(tool_by_name[control_tool])
+
     max_turns = config.get("max_turns", 10)
     if isinstance(max_turns, bool) or not isinstance(max_turns, int) or max_turns < 1:
         raise ValueError(f"{path} profile {name!r} max_turns must be a positive integer")
@@ -80,6 +99,7 @@ def _build_profile(
         description=description,
         system_prompt=system_prompt,
         tools=tuple(selected_tools),
+        skills=skill_names,
         max_turns=max_turns,
         permission_mode=permission_mode,
         reuse=reuse,

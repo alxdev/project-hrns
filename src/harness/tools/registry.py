@@ -22,6 +22,9 @@ class ToolRegistry:
     def unregister(self, name: str) -> Tool | None:
         return self._tools.pop(name, None)
 
+    def get(self, name: str) -> Tool | None:
+        return self._tools.get(name)
+
     def definitions(self) -> list[ToolDefinition]:
         return [self._tools[name].definition for name in sorted(self._tools)]
 

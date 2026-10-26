@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
 from harness.agent import Agent
-from harness.agent.loop import NullEventSink
+from harness.agent.loop import NullEventSink, ToolLogEvent
 from harness.api.types import ToolDefinition
 from harness.commands import CommandContext, build_default_commands
 from harness.compaction import CompactionManager
@@ -25,13 +26,16 @@ from harness.provider import (
 from harness.runtime.noninteractive import run_once
 from harness.runtime.operations import OperationController
 from harness.runtime.status import format_runtime_configuration, format_startup_message
+from harness.skills import SkillError, load_skills
 from harness.subagents import (
     DelegationTool,
     SubagentManager,
     SubagentProfile,
     load_profiles,
 )
+from harness.tools.access import make_profile_tool_access_persister
 from harness.tools.base import ToolContext
+from harness.tools.catalog import ToolCatalog
 from harness.tools.loader import load_tools
 from harness.tools.registry import ToolRegistry
 from harness.transcript import Transcript, TranscriptEventSink
@@ -155,9 +159,36 @@ async def main(argv: list[str] | None = None) -> int:
             output.error(message)
         return 2
     try:
-        profiles = load_profiles(config.working_directory / "subagents.json", base_tools)
+        skill_catalog = load_skills(
+            config.working_directory / "skills.json",
+            config.working_directory,
+        )
+    except SkillError as exc:
+        message = f"invalid skills configuration: {exc}"
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+        return 2
+    artifact_root = config.data_directory / "tool-artifacts"
+    tool_catalog = ToolCatalog(base_tools, artifact_root)
+    try:
+        profiles = load_profiles(config.working_directory / "subagents.json", tool_catalog)
     except ValueError as exc:
         message = f"invalid subagents.json: {exc}"
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+        return 2
+    missing_skills = {
+        skill_name
+        for profile in profiles.values()
+        for skill_name in profile.skills
+        if skill_catalog.get(skill_name) is None
+    }
+    if missing_skills:
+        message = f"unknown skills in subagents.json: {', '.join(sorted(missing_skills))}"
         if output is None:
             print(message, file=sys.stderr)
         else:
@@ -186,18 +217,59 @@ async def main(argv: list[str] | None = None) -> int:
             if current_choice is not None
             else build_provider(config)
         )
-        subagent_provider.system = profile.system_prompt
+        profile_skills = skill_catalog.for_names(profile.skills)
+        skill_prompt = profile_skills.catalog_prompt()
+        subagent_provider.system = (
+            f"{profile.system_prompt}\n\n{skill_prompt}" if skill_prompt else profile.system_prompt
+        )
         subagent_permissions = {
             "auto_allow": AlwaysAllow(),
             "inherit": permissions,
             "ask": permissions,
             "deny": AlwaysDeny(),
         }.get(profile.permission_mode, permissions)
+        registry = ToolRegistry(profile.tools)
+
+        async def emit_log(tool_name: str, text: str, stream: str) -> None:
+            await events.emit(
+                ToolLogEvent(
+                    name=tool_name,
+                    text=text,
+                    stream=stream,
+                    agent=profile.name,
+                    log_prefix="  ↳ ",
+                )
+            )
+
+        async def approve_persist_tool(tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
+            if input_adapter is None or output is None:
+                return False
+            with output.suspend():
+                return await input_adapter.approve(tool, arguments)
+
+        persist_tool_access = make_profile_tool_access_persister(
+            config.working_directory / "subagents.json",
+            profile.name,
+            approve_persist_tool,
+            report_error=output.error if output is not None else None,
+        )
+
+        agent_context = replace(
+            context,
+            allowed_read_roots=tuple(skill.root for skill in profile_skills.skills.values()),
+            skill_catalog=skill_catalog,
+            allowed_skills=profile.skills,
+            tool_registry=registry,
+            persist_tool_access=persist_tool_access,
+            emit_log=emit_log,
+            artifact_root=artifact_root,
+            tool_catalog=tool_catalog,
+        )
         return Agent(
             provider=subagent_provider,
-            tools=ToolRegistry(profile.tools),
+            tools=registry,
             permissions=subagent_permissions,
-            context=context,
+            context=agent_context,
             events=events,
             compaction=compaction,
             max_turns=profile.max_turns,

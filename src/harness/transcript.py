@@ -15,6 +15,7 @@ from harness.agent.loop import (
     TextStreamInterruptedEvent,
     ToolCallEvent,
     ToolExecutionEvent,
+    ToolLogEvent,
     ToolResultEvent,
     UserMessageEvent,
 )
@@ -124,6 +125,19 @@ class Transcript:
                     status="failed" if event.result.is_error else "completed",
                     metadata={"name": event.name, "tool_call_id": event.result.tool_use_id},
                 ), True
+        elif isinstance(event, ToolLogEvent):
+            self.activity = f"Running tool: {event.name}..."
+            return self._append(
+                "tool_log",
+                event.text.rstrip(),
+                event.agent,
+                status="complete",
+                metadata={
+                    "name": event.name,
+                    "stream": event.stream,
+                    "log_prefix": event.log_prefix,
+                },
+            ), True
         elif isinstance(event, SubagentLifecycleEvent):
             if event.phase == "started":
                 self.activity = f"Delegating to {event.profile}..."

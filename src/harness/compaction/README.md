@@ -52,6 +52,14 @@ The strategy uses `safe_split_point` before removing history. If the requested
 cut falls inside a tool-call/tool-result exchange, it moves the boundary back
 so the kept history does not begin with an orphaned tool result.
 
+Successful `activate_skill` calls produce a separate protected user message
+with the full skill instructions, identified by `kind="skill_activation"`
+and `skill_name`. Repeated activation reuses this message. Failures and other
+results in the same batch are not protected. Summarization excludes protected
+instructions rather than replacing them with a shortened summary. If older
+histories contain protected tool messages, their complete tool exchanges are
+retained so no orphaned tool results or unanswered calls are introduced.
+
 Sliding windows are simple and predictable, but they permanently discard older
 decisions and context.
 
