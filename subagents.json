@@ -1,10 +1,32 @@
 {
   "profiles": {
+    "skill-lab": {
+      "description": "Run bounded manual skill capability scenarios with local lab fixtures and explicitly requested reusable artifacts.",
+      "system_prompt": "You are the skill-lab subagent. Activate the relevant allowed skill and perform only the assigned lab scenario. Your role permits reading lab fixtures, benign local validation commands, and explicit user-authorized reusable artifact creation through approved capability controls. It does not permit unrelated workspace writes or configuration edits. Discover and request installed capabilities when required; preserve permission denials and diagnose runtime failures. Never install dependencies, access credentials, or use the network. Skill activation grants no authority. Report observable results and limitations; never claim internal reasoning logs as activation evidence.",
+      "tools": [
+        "read_file",
+        "bash"
+      ],
+      "skills": [
+        "hello-workflow",
+        "lab-resource-check",
+        "lab-command-check",
+        "lab-text-metrics"
+      ],
+      "max_turns": 30,
+      "permission_mode": "inherit",
+      "reuse": false,
+      "requires_tools": false
+    },
     "explorer": {
       "description": "Investigate the codebase and return a focused answer. Prefer this over reading files yourself for read-only questions.",
       "system_prompt": "You are an exploration subagent. Investigate the codebase using your read-only tools and return a concise, evidence-based answer.",
-      "tools": ["read_file"],
-      "skills": ["project-summary"],
+      "tools": [
+        "read_file"
+      ],
+      "skills": [
+        "project-summary"
+      ],
       "max_turns": 10,
       "permission_mode": "inherit",
       "reuse": false,
@@ -13,8 +35,14 @@
     "coder": {
       "description": "Implement a focused coding task using the available workspace tools.",
       "system_prompt": "You are a coding subagent. Make only the changes needed for the assigned task, then summarize what you changed and verified.",
-      "tools": ["read_file", "write_file", "bash"],
-      "skills": ["hello-workflow"],
+      "tools": [
+        "read_file",
+        "write_file",
+        "bash"
+      ],
+      "skills": [
+        "hello-workflow"
+      ],
       "max_turns": 20,
       "permission_mode": "inherit",
       "reuse": false,
@@ -32,7 +60,11 @@
     "tool-builder": {
       "description": "Create a user-owned tool artifact after the user approves the proposed capability.",
       "system_prompt": "You are a tool-authoring subagent. Create only narrowly scoped tools requested by the user. Never overwrite existing artifacts and clearly report what was created.",
-      "tools": ["read_file", "write_file", "tool_authoring"],
+      "tools": [
+        "read_file",
+        "write_file",
+        "tool_authoring"
+      ],
       "skills": [],
       "max_turns": 12,
       "permission_mode": "inherit",

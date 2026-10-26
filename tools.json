@@ -2,11 +2,12 @@
   "tools": {
     "read_file": {
       "handler": "read_file",
-      "description": "Read a UTF-8 text file relative to the working directory.",
+      "description": "Read a UTF-8 text file. Existing workspace paths take precedence; missing relative paths fall back to a unique readable file in assigned skill roots. Use skill to select an assigned skill explicitly.",
       "input_schema": {
         "type": "object",
         "properties": {
-          "path": {"type": "string", "description": "File path."}
+          "path": {"type": "string", "description": "Workspace-first file path, or a relative path inside the explicitly selected skill."},
+          "skill": {"type": "string", "minLength": 1, "description": "Optional assigned skill name. Resolves path only inside that skill; path must be relative and remain inside its root."}
         },
         "required": ["path"],
         "additionalProperties": false

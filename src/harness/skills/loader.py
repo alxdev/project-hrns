@@ -77,7 +77,11 @@ class SkillCatalog:
         return (
             f"<skill_content name={name!r}>\n"
             f"skill_directory: {skill.root}\n"
-            "Read supporting files relative to this directory when the skill references them.\n"
+            "read_file prefers existing workspace paths. If a relative path is missing there, "
+            "it uses a unique readable file in assigned skill roots; "
+            "multiple matches are an error.\n"
+            f"For supporting files in this skill, pass skill={name!r} with a relative path "
+            "inside skill_directory to select it explicitly, without workspace fallback.\n"
             "available_resources:\n"
             f"{resource_text}\n\n"
             f"{content.rstrip()}\n"

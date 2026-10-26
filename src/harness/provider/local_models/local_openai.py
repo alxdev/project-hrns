@@ -15,6 +15,7 @@ from harness.api.types import (
     ToolResult,
 )
 from harness.provider.base import ProviderResponseCompleted, ProviderStreamEvent, ProviderTextDelta
+from harness.provider.http_transport import provider_http_client
 from harness.provider.local_models.local_models import load_local_models, resolve_local_model
 
 
@@ -57,9 +58,9 @@ class LocalOpenAICompatibleProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolDefinition],
     ) -> ProviderResponse:
-        import httpx
-
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with provider_http_client(
+            provider="local OpenAI-compatible", base_url=self.base_url, operation="request"
+        ) as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 headers=self._headers(),
@@ -99,14 +100,16 @@ class LocalOpenAICompatibleProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolDefinition],
     ) -> AsyncIterator[ProviderStreamEvent]:
-        import httpx
-
         payload = self._payload(messages, tools)
         payload["stream"] = True
         text_parts: list[str] = []
         tool_parts: dict[int, dict[str, str]] = {}
         finish_reason: str | None = None
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with provider_http_client(
+            provider="local OpenAI-compatible",
+            base_url=self.base_url,
+            operation="streaming request",
+        ) as client:
             async with client.stream(
                 "POST",
                 f"{self.base_url}/chat/completions",

@@ -268,6 +268,12 @@ configure the profiles available there.
 
 ## Skills
 
+For copy-paste manual scenarios covering activation, tool requests and denials,
+failure diagnosis, and reusable artifacts, see the
+[skill capability walkthrough](docs/skill-capability-walkthrough.md).
+The lab fixtures live in `.agents/skills/` and are explicitly registered in
+`skills.json`.
+
 Skills use the portable Agent Skills directory convention. The harness
 discovers skills from `.agents/skills/` in the configured project and from
 `~/.agents/skills/` for user-wide skills. A skill directory contains a
@@ -298,6 +304,15 @@ its own arbitrary layout. Skill instructions are workflow guidance and do not
 grant tools or permissions. The root orchestrator does not receive the
 subagent skill catalog automatically; it only receives the project
 `AGENTS.md` context and delegates focused work.
+
+For `read_file`, an existing workspace path takes precedence. A missing relative
+path falls back to a unique readable file in assigned skill roots; multiple
+matches return an ambiguity error. Use, for example,
+`{"path": "data/check.json", "skill": "lab-resource-check"}` to select an assigned
+skill explicitly. This requires a relative path contained in that skill and
+within existing read grants, with no workspace fallback. Absolute paths retain
+the existing workspace/allowed-root checks. Permission errors, directories, and
+dangling workspace symlinks do not trigger fallback.
 
 Each successful activation adds one protected instruction message containing
 the complete skill content. Repeated activation reuses that message. Failed
