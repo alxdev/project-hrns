@@ -97,15 +97,19 @@ def make_profile_tool_access_persister(
     profile_name: str,
     approve: ToolApproval,
     report_error: ErrorReporter | None = None,
+    on_saved: Callable[[str], None] | None = None,
 ) -> Callable[[str], Awaitable[bool]]:
     """Build the tool-context callback for one configured subagent profile."""
 
     async def persist(tool_name: str) -> bool:
         try:
-            return await persist_profile_tool_access(path, profile_name, tool_name, approve)
+            saved = await persist_profile_tool_access(path, profile_name, tool_name, approve)
         except (OSError, TypeError, ValueError) as exc:
             if report_error is not None:
                 report_error(f"could not save tool access: {exc}")
             return False
+        if saved and on_saved is not None:
+            on_saved(tool_name)
+        return saved
 
     return persist

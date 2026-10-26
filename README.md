@@ -367,7 +367,8 @@ the tool result, and surfaces stderr as diagnostics. The artifact is validated
 and registered for the current session without modifying the harness
 installation or the target project; existing artifacts are never overwritten.
 Other subagents can request the created tool by name through `request_tool`.
-Saved artifact names also resolve when profiles load after restarting. Saving
+Saved access is available to subsequent delegations in the same process and
+when profiles load after restarting, for both native tools and artifacts. Saving
 access to a profile remains a separate approval; discovery never grants
 access or executes artifact code. Creating and using the artifact still go
 through normal tool approval. Review authored commands and files before reuse.

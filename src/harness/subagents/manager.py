@@ -32,7 +32,7 @@ class ProfileSubagent:
         return self._profile.description
 
     async def run(self, task: str) -> str:
-        record = await self._manager._run_profile(self._profile, task)
+        record = await self._manager.delegate(self.name, task)
         return record.result
 
 
@@ -64,6 +64,12 @@ class SubagentManager:
             raise ValueError(f"unknown subagent: {profile_name}")
         return ProfileSubagent(self, profile)
 
+    def grant_tool_access(self, profile_name: str, tool: Tool) -> None:
+        """Merge a successfully persisted grant into this manager's current profile."""
+        profile = self.profiles[profile_name]
+        if not any(item.definition.name == tool.definition.name for item in profile.tools):
+            self.profiles[profile_name] = replace(profile, tools=(*profile.tools, tool))
+
     async def delegate(self, profile_name: str, prompt: str) -> SubagentRecord:
         profile = self.profiles.get(profile_name)
         if profile is None:
@@ -83,6 +89,8 @@ class SubagentManager:
         await self._emit(SubagentLifecycleEvent(profile.name, record.id, "started"))
         try:
             discovered_tools = await self.tool_loader(profile.name) if self.tool_loader else ()
+            # A save may have completed while discovery was awaiting I/O.
+            profile = self.profiles[profile.name]
             self._discovered_tools[profile.name] = tuple(discovered_tools)
             if profile.requires_tools and not (*profile.tools, *discovered_tools):
                 raise RuntimeError(
@@ -97,7 +105,7 @@ class SubagentManager:
                     agent = self.factory(effective_profile)
                     self._agents[profile.name] = agent
                 else:
-                    for tool in discovered_tools:
+                    for tool in effective_profile.tools:
                         if not any(
                             definition.name == tool.definition.name
                             for definition in agent.tools.definitions()

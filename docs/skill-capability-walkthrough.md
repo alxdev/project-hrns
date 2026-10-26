@@ -91,8 +91,9 @@ helper output; the model must not claim that the script ran.
 
 For saved access, repeat, approve acquisition, accept persistence, and approve
 execution. Inspect the save result and `skill-lab.tools` in `subagents.json` for
-bash. Exit and restart with the same command, then repeat the prompt. Expect
-bash already assigned, no access request, but normal execution approval.
+bash. Repeat the prompt in a fresh delegation in the same process. Expect bash
+already assigned, no access request, but normal execution approval. Restart with
+the same command and repeat to confirm the saved access also survives restart.
 
 ## Diagnose simulated failures
 
@@ -154,10 +155,11 @@ Use delegate_skill-lab and lab-text-metrics. Discover and reuse the existing lab
 
 Approve access, decline persistence, and approve execution. Expect the same JSON,
 no authoring call, and unchanged artifact files. Repeat from another fresh
-delegation, accept the access persistence prompt, execute, and restart. After
-restart the saved tool should be assigned immediately, with execution still
-subject to policy. Discovery lists durable artifacts even when access was not
-saved. Saving tool_authoring access is separate from saving the authored tool.
+delegation, accept the access persistence prompt, and execute. In another fresh
+delegation in the same process, and again after restart, the saved tool should
+be assigned immediately, with execution still subject to policy. Discovery lists
+durable artifacts even when access was not saved. Saving tool_authoring access
+is separate from saving the authored tool.
 
 ## Role boundary and reruns
 
@@ -169,10 +171,14 @@ Expect refusal based on the lab role, no write_file request, shell workaround,
 or created file. This is a behavioral role test, not a filesystem sandbox
 guarantee: approved tools still enforce their own boundaries.
 
-Profiles/catalogs load once at startup. `reuse:false` gives each delegation a
-fresh subagent; unsaved grants do not carry to another delegation. An access
+Profile configuration loads at startup; manual external edits require restart.
+Artifacts are discovered dynamically through the shared catalog. `reuse:false`
+gives each delegation a fresh subagent; unsaved grants do not carry to another
+delegation. An access
 grant remains active throughout its delegation even after declining persistence.
-Saving affects future runs after restart; it changes later test preconditions.
+Approved saves update that profile in the running manager immediately and persist
+across restart; they change later test preconditions. Other configuration is not
+reloaded. With `reuse:true`, unsaved grants remain in the cached subagent session.
 `/clear` does not restore baseline profile files or delete artifacts. A fresh
 process rereads configuration but does not undo persisted changes. Artifacts are
 durable independently of whether profile access was saved.
