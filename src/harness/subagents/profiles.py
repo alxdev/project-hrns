@@ -81,10 +81,10 @@ def _build_profile(
         raise ValueError(f"{path} profile {name!r} skills must be an array of strings")
     skill_names = tuple(configured_skills)
     selected_names = {tool.definition.name for tool in selected_tools}
-    for control_tool in ("request_tool", "activate_skill"):
+    for control_tool in ("request_tool", "list_available_tools", "activate_skill"):
         if (
             control_tool in tool_by_name
-            and (control_tool == "request_tool" or skill_names)
+            and (control_tool != "activate_skill" or skill_names)
             and control_tool not in selected_names
         ):
             selected_tools.append(tool_by_name[control_tool])

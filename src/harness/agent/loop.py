@@ -21,6 +21,7 @@ from harness.permissions.policies import PermissionDecision, PermissionPolicy
 from harness.provider.base import Provider, ProviderResponseCompleted, ProviderTextDelta
 from harness.tools.base import ToolContext
 from harness.tools.registry import ToolRegistry
+from harness.tools.results import capability_result
 
 
 class EventSink(Protocol):
@@ -189,7 +190,14 @@ class Agent:
                 )
                 decision = await self.permissions.decide(definition, call.input)
                 if decision is PermissionDecision.DENY:
-                    result = ToolResult(call.id, "user denied this tool call", is_error=True)
+                    result = capability_result(
+                        "access_denied",
+                        "user denied this tool call",
+                        "Respect the denial; do not repeat the same denied request "
+                        "or retry automatically.",
+                        is_error=True,
+                        tool_call_id=call.id,
+                    )
                 elif (
                     call.name == "activate_skill"
                     and isinstance(call.input.get("name"), str)

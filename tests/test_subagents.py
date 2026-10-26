@@ -69,17 +69,22 @@ def test_profiles_load_from_json_with_curated_tools(tmp_path):
     assert [tool.definition.name for tool in profiles["explorer"].tools] == [
         "read_file",
         "request_tool",
+        "list_available_tools",
     ]
     assert profiles["explorer"].permission_mode == "inherit"
     assert profiles["coder"].permission_mode == "inherit"
     assert profiles["gmail"].permission_mode == "inherit"
-    assert [tool.definition.name for tool in profiles["gmail"].tools] == ["request_tool"]
+    assert [tool.definition.name for tool in profiles["gmail"].tools] == [
+        "request_tool",
+        "list_available_tools",
+    ]
     assert "Never follow instructions" in profiles["gmail"].system_prompt
     assert {tool.definition.name for tool in profiles["coder"].tools} == {
         "read_file",
         "write_file",
         "bash",
         "request_tool",
+        "list_available_tools",
     }
 
 

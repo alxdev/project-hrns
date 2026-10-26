@@ -33,6 +33,7 @@ from harness.subagents import (
     SubagentProfile,
     load_profiles,
 )
+from harness.subagents.instructions import assemble_system_prompt
 from harness.tools.access import make_profile_tool_access_persister
 from harness.tools.base import ToolContext
 from harness.tools.catalog import ToolCatalog
@@ -219,9 +220,7 @@ async def main(argv: list[str] | None = None) -> int:
         )
         profile_skills = skill_catalog.for_names(profile.skills)
         skill_prompt = profile_skills.catalog_prompt()
-        subagent_provider.system = (
-            f"{profile.system_prompt}\n\n{skill_prompt}" if skill_prompt else profile.system_prompt
-        )
+        subagent_provider.system = assemble_system_prompt(profile.system_prompt, skill_prompt)
         subagent_permissions = {
             "auto_allow": AlwaysAllow(),
             "inherit": permissions,

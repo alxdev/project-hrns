@@ -11,6 +11,7 @@ def test_registry_definitions_are_sorted():
     assert [item.name for item in registry.definitions()] == [
         "activate_skill",
         "bash",
+        "list_available_tools",
         "read_file",
         "request_tool",
         "tool_authoring",

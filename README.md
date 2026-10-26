@@ -309,8 +309,14 @@ requests access to `activate_skill`.
 
 ## Dynamic tool capabilities
 
-Every configured subagent receives the `request_tool` control tool. If a
-subagent needs a built-in or artifact tool that is installed but not in its profile, it
+Every configured subagent receives `list_available_tools` and `request_tool`
+when those controls are installed. Discovery lists installed native and artifact
+tool names and descriptions without executing commands, granting access, or
+saving profile changes. Invalid artifacts are reported per entry while valid
+tools remain listed. Directory enumeration errors return `discovery_failed`;
+they do not establish that tools are missing. `available` means assigned to this
+session; `requires_approval` means unassigned, not a guarantee of policy approval.
+If a subagent needs a built-in or artifact tool installed but not in its profile, it
 can explain why and request it. The harness asks for approval, adds the tool
 to the current subagent session, and returns control to the model so it can
 retry with the new definition. A second, separate approval asks whether that
@@ -319,6 +325,21 @@ Requests execute through the configured tool handler and registry, so an
 unregistered request tool cannot grant access. Profile saves re-read the file
 after approval, serialize updates within the process, and replace the file
 atomically to preserve edits made while the prompt was open.
+
+Shared subagent instructions preserve each profile's role and task boundaries:
+use assigned tools first, discover missing capabilities, then request installed
+tools as needed. Required skill steps must not be silently skipped. Runtime,
+dependency, and credential failures need diagnosis; they do not establish a
+missing harness tool. Respect denials without repeating the same denied request
+or bypassing it through another tool.
+
+Capability controls return JSON text in the existing `ToolResult.content` string,
+with `status`, a readable `message`, and `next_step`. Request results distinguish
+enabled, already available, not installed, configuration, validation, and load
+failures. Authoring reports creation or failure; permission denial reports
+`access_denied`. Ordinary tool output remains unchanged. No automatic recovery
+loops or extra model calls are introduced. Declining to save access leaves an
+enabled tool available in the current session.
 
 The `tool_authoring` tool is separate from ordinary tool activation. An
 authorized tool-builder can create a command-backed tool artifact under
@@ -335,6 +356,10 @@ Saved artifact names also resolve when profiles load after restarting. Saving
 access to a profile remains a separate approval; discovery never grants
 access or executes artifact code. Creating and using the artifact still go
 through normal tool approval. Review authored commands and files before reuse.
+Authoring is an explicit, narrowly scoped supplementary option only when the
+capability is truly missing, never an automatic fallback or a replacement for
+native tools. Guidance suggests it only if installed; an unassigned authoring
+tool must first be requested. Creation never bypasses a denial.
 
 For example, a Node artifact can include `main.js` and use a manifest command
 such as `["node", "{artifact_dir}/main.js"]`. The command runs with the target

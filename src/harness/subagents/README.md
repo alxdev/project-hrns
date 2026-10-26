@@ -24,9 +24,25 @@ Profiles may also list portable skills in `skills`. The subagent receives a
 catalog of those skills and activates one with `activate_skill` when needed;
 the full skill instructions and supporting-file inventory are then loaded into
 that subagent's conversation. Skills do not grant tools. The harness adds the
-`request_tool` control tool to each profile so a subagent can ask for an
+`list_available_tools` and `request_tool` controls to each profile when installed,
+so a subagent can discover installed native/artifact tools and ask for an
 installed capability during a session; saving that access to JSON is a
 separate approval.
+
+System prompt assembly includes shared instructions from `instructions.py`
+alongside the profile prompt and allowed skill catalog. Recovery must stay
+within the assigned role: use assigned tools first, discover installed tools,
+and request unassigned capabilities. Discovery never executes, grants, or saves
+access; invalid artifact entries do not prevent valid entries from being listed.
+`available` and `requires_approval` describe session assignment, not a guarantee
+of execution policy approval. Required skill steps must not be silently skipped.
+Runtime, dependency, and credential failures are distinct from missing tools.
+
+Requests, authoring results, and permission denials use JSON text in the existing
+tool result string with `status`, `message`, and `next_step`. Denials report
+`access_denied`; respect them without repeating the same request or bypassing
+them. There are no automatic recovery loops or extra model calls. Declining a
+profile save does not revoke access already granted for the current session.
 
 The JSON profile name becomes the delegation profile name. Its `tools` array
 references built-in tool names; MCP-only profiles can use an empty array and
@@ -82,6 +98,10 @@ save access in a profile, and saved artifact names resolve after restart.
 Discovery does not automatically grant a tool to another subagent. Artifact
 commands run in the target project and receive explicit artifact and allowed
 skill paths through their environment.
+Authoring requires an explicit, authorized choice for narrowly scoped
+supplementary creation when a capability is truly missing. It is never an
+automatic fallback or a way to replace native tools. If installed but unassigned,
+request `tool_authoring` first; if absent, report the limitation.
 
 ## MCP tools
 

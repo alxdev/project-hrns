@@ -49,6 +49,15 @@
         "additionalProperties": false
       }
     },
+    "list_available_tools": {
+      "handler": "list_available_tools",
+      "description": "List installed native and artifact tool names, descriptions, and session access without executing or granting access. Access states do not guarantee policy approval.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
     "request_tool": {
       "handler": "request_tool",
       "description": "Request a tool be added to this subagent for the current session.",

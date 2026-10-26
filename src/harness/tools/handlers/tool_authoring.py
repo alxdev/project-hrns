@@ -8,8 +8,18 @@ from typing import Any
 from harness.api.types import ToolResult
 from harness.tools.base import ToolContext
 from harness.tools.loader import load_artifact_tool
+from harness.tools.results import capability_result
 
 _NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _failure(message: str, status: str = "validation_error") -> ToolResult:
+    return capability_result(
+        status,
+        message,
+        "Report or correct the failure within the authorized scope; do not retry automatically.",
+        is_error=True,
+    )
 
 
 async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult:
@@ -19,11 +29,11 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
     files = arguments.get("files")
     command = arguments.get("command")
     if not isinstance(name, str) or not _NAME.fullmatch(name):
-        return ToolResult("", "name must be a simple lowercase tool name", is_error=True)
+        return _failure("name must be a simple lowercase tool name")
     if not isinstance(description, str) or not description.strip():
-        return ToolResult("", "description must be a non-empty string", is_error=True)
+        return _failure("description must be a non-empty string")
     if not isinstance(input_schema, dict):
-        return ToolResult("", "input_schema must be an object", is_error=True)
+        return _failure("input_schema must be an object")
     if (
         not isinstance(files, dict)
         or not files
@@ -32,24 +42,28 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
             for path, content in files.items()
         )
     ):
-        return ToolResult("", "files must map relative file paths to text contents", is_error=True)
+        return _failure("files must map relative file paths to text contents")
     if (
         not isinstance(command, list)
         or not command
         or not all(isinstance(part, str) and part and "\0" not in part for part in command)
     ):
-        return ToolResult(
-            "", "command must be a non-empty array of command arguments", is_error=True
-        )
+        return _failure("command must be a non-empty array of command arguments")
 
     if context.artifact_root is None:
-        return ToolResult("", "tool artifact storage is not configured", is_error=True)
-    if context.tool_catalog is not None and name in context.tool_catalog:
-        return ToolResult("", f"tool {name!r} is already installed", is_error=True)
+        return _failure("tool artifact storage is not configured", "configuration_error")
+    try:
+        installed = (context.tool_catalog is not None and name in context.tool_catalog) or (
+            context.tool_registry is not None and context.tool_registry.get(name) is not None
+        )
+    except (OSError, ValueError) as exc:
+        return _failure(f"tool artifact validation failed: {exc}", "load_failed")
+    if installed:
+        return _failure(f"tool {name!r} is already installed", "already_installed")
     artifact_root = context.artifact_root.resolve()
     artifact = artifact_root / name
     if artifact.exists():
-        return ToolResult("", f"tool artifact already exists: {artifact}", is_error=True)
+        return _failure(f"tool artifact already exists: {artifact}", "already_installed")
     created = False
     try:
         artifact.mkdir(parents=True, exist_ok=False)
@@ -78,7 +92,7 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
     except Exception as exc:
         if created:
             shutil.rmtree(artifact, ignore_errors=True)
-        return ToolResult("", f"tool artifact validation failed: {exc}", is_error=True)
+        return _failure(f"tool artifact validation failed: {exc}", "authoring_failed")
 
     persisted = await context.persist_tool_access(name) if context.persist_tool_access else False
     persistence_note = (
@@ -87,10 +101,11 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
         else " Access was not saved to the subagent profile."
     )
 
-    return ToolResult(
-        "",
+    return capability_result(
+        "created",
         f"created and activated tool artifact {name!r} for this session at {artifact}. "
         "The command runs with JSON arguments on stdin; stdout is returned as the tool result. "
         "Other subagents can request this installed tool by name."
         f"{persistence_note}",
+        "Use the supplementary tool subject to execution policy.",
     )

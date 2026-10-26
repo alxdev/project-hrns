@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 from harness.agent import Agent
@@ -76,7 +77,8 @@ async def test_denied_tool_is_returned_as_error_result(tmp_path):
 
     denied = provider.calls[1][0][-1].content[0]
     assert denied.is_error is True
-    assert denied.content == "user denied this tool call"
+    assert json.loads(denied.content)["message"] == "user denied this tool call"
+    assert json.loads(denied.content)["status"] == "access_denied"
 
 
 async def test_cancelled_tool_call_rolls_back_incomplete_turn(tmp_path):
