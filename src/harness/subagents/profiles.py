@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from harness.tools.artifacts import ArtifactTool
 from harness.tools.base import Tool
 
 from .models import SubagentProfile
@@ -62,17 +63,29 @@ def _build_profile(
         allowed = ", ".join(sorted(PERMISSION_MODES))
         raise ValueError(f"{path} profile {name!r} permission_mode must be one of: {allowed}")
 
-    configured_tools = config.get("tools")
-    if not isinstance(configured_tools, list) or not all(
-        isinstance(tool_name, str) for tool_name in configured_tools
-    ):
-        raise ValueError(f"{path} profile {name!r} tools must be an array of strings")
     selected_tools: list[Tool] = []
-    for tool_name in configured_tools:
-        tool = tool_by_name.get(tool_name)
-        if tool is None:
-            raise ValueError(f"{path} profile {name!r} references unknown tool {tool_name!r}")
-        selected_tools.append(tool)
+    assigned: set[str] = set()
+    fields = {"tools": config.get("tools"), "tool_artifacts": config.get("tool_artifacts", [])}
+    for field, configured in fields.items():
+        if not isinstance(configured, list) or not all(
+            isinstance(item, str) for item in configured
+        ):
+            raise ValueError(f"{path} profile {name!r} {field} must be an array of strings")
+        for tool_name in configured:
+            if tool_name in assigned:
+                raise ValueError(f"{path} profile {name!r} duplicate tool assignment {tool_name!r}")
+            assigned.add(tool_name)
+    for field, configured in fields.items():
+        for tool_name in configured:
+            tool = tool_by_name.get(tool_name)
+            if tool is None:
+                raise ValueError(f"{path} profile {name!r} references unknown tool {tool_name!r}")
+            expected = "tool_artifacts" if isinstance(tool, ArtifactTool) else "tools"
+            if field != expected:
+                raise ValueError(
+                    f"{path} profile {name!r} tool {tool_name!r} belongs in {expected}, not {field}"
+                )
+            selected_tools.append(tool)
 
     configured_skills = config.get("skills", [])
     if not isinstance(configured_skills, list) or not all(

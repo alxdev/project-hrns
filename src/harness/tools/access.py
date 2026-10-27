@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -11,12 +11,15 @@ from weakref import WeakKeyDictionary
 
 from harness.api.types import ToolDefinition
 
+from .artifacts import ArtifactTool
+from .base import Tool
+
 ToolApproval = Callable[[ToolDefinition, dict[str, Any]], Awaitable[bool]]
 ErrorReporter = Callable[[str], None]
 _locks: WeakKeyDictionary[asyncio.AbstractEventLoop, dict[Path, asyncio.Lock]] = WeakKeyDictionary()
 
 
-def _read_profile(path: Path, profile_name: str) -> tuple[dict[str, Any], list[str]] | None:
+def _read_profile(path: Path, profile_name: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
     if not path.exists():
         return None
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -24,10 +27,16 @@ def _read_profile(path: Path, profile_name: str) -> tuple[dict[str, Any], list[s
     profile = profiles.get(profile_name) if isinstance(profiles, dict) else None
     if not isinstance(profile, dict):
         return None
-    tools = profile.get("tools")
-    if not isinstance(tools, list) or not all(isinstance(item, str) for item in tools):
-        return None
-    return raw, tools
+    assigned: set[str] = set()
+    for field in ("tools", "tool_artifacts"):
+        names = profile.get(field, [] if field == "tool_artifacts" else None)
+        if not isinstance(names, list) or not all(isinstance(item, str) for item in names):
+            raise ValueError(f"profile {profile_name!r} {field} must be an array of strings")
+        for name in names:
+            if name in assigned:
+                raise ValueError(f"profile {profile_name!r} duplicate tool assignment {name!r}")
+            assigned.add(name)
+    return raw, profile
 
 
 def _atomic_write(path: Path, data: dict[str, Any]) -> None:
@@ -52,14 +61,22 @@ async def persist_profile_tool_access(
     profile_name: str,
     tool_name: str,
     approve: ToolApproval,
+    tool_catalog: Mapping[str, Tool],
 ) -> bool:
     """Ask before saving tool access to a configured subagent profile."""
     path = path.resolve()
+    tool = tool_catalog.get(tool_name)
+    if tool is None:
+        return False
+    field = "tool_artifacts" if isinstance(tool, ArtifactTool) else "tools"
+    other_field = "tools" if field == "tool_artifacts" else "tool_artifacts"
     current = _read_profile(path, profile_name)
     if current is None:
         return False
-    _, tools = current
-    if tool_name in tools:
+    _, profile = current
+    if tool_name in profile.get(other_field, []):
+        raise ValueError(f"tool {tool_name!r} belongs in {field}, not {other_field}")
+    if tool_name in profile.get(field, []):
         return True
 
     definition = ToolDefinition(
@@ -85,8 +102,13 @@ async def persist_profile_tool_access(
         current = _read_profile(path, profile_name)
         if current is None:
             return False
-        raw, tools = current
+        raw, profile = current
+        if tool_name in profile.get(other_field, []):
+            raise ValueError(f"tool {tool_name!r} belongs in {field}, not {other_field}")
+        tools = profile.get(field, [])
         if tool_name not in tools:
+            profile.setdefault("tool_artifacts", [])
+            tools = profile[field]
             tools.append(tool_name)
             _atomic_write(path, raw)
     return True
@@ -96,6 +118,7 @@ def make_profile_tool_access_persister(
     path: Path,
     profile_name: str,
     approve: ToolApproval,
+    tool_catalog: Mapping[str, Tool],
     report_error: ErrorReporter | None = None,
     on_saved: Callable[[str], None] | None = None,
 ) -> Callable[[str], Awaitable[bool]]:
@@ -103,7 +126,9 @@ def make_profile_tool_access_persister(
 
     async def persist(tool_name: str) -> bool:
         try:
-            saved = await persist_profile_tool_access(path, profile_name, tool_name, approve)
+            saved = await persist_profile_tool_access(
+                path, profile_name, tool_name, approve, tool_catalog
+            )
         except (OSError, TypeError, ValueError) as exc:
             if report_error is not None:
                 report_error(f"could not save tool access: {exc}")

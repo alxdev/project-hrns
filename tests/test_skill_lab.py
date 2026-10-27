@@ -27,6 +27,8 @@ def test_lab_catalog_and_profile_resolve_without_user_home(tmp_path):
     assert profile.max_turns == 30
     assert {tool.definition.name for tool in profile.tools} == {
         "read_file",
+        "bash",
+        "tool_authoring",
         "activate_skill",
         "list_available_tools",
         "request_tool",

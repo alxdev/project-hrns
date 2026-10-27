@@ -252,160 +252,28 @@ enforcement remain in Python. The interactive
 
 ## Subagent configuration
 
-Subagents are configured in `subagents.json` in the configured working
-directory. The file is authoritative: if it is missing or contains an empty
-`profiles` object, no subagents are configured. There is no Python profile
-fallback.
-
-Each profile names existing built-in tools by name. MCP-only profiles can use
-an empty `tools` array with `requires_tools` enabled; their tools are loaded
-when the profile is delegated to. Tool implementations and permission checks
-remain enforced by Python code.
-
-The repository's `subagents.json` provides the current explorer, coder, and
-Gmail profiles. Copy or create this file in another working directory to
-configure the profiles available there.
+`subagents.json` in the configured working directory defines the available
+profiles, their tools, and their skills. See the
+[subagent guide](src/harness/subagents/README.md) for profile configuration,
+delegation, and permissions.
 
 ## Skills
 
-For copy-paste manual scenarios covering activation, tool requests and denials,
-failure diagnosis, and reusable artifacts, see the
-[skill capability walkthrough](docs/skill-capability-walkthrough.md).
-The lab fixtures live in `.agents/skills/` and are explicitly registered in
-`skills.json`.
-
-Skills use the portable Agent Skills directory convention. The harness
-discovers skills from `.agents/skills/` in the configured project and from
-`~/.agents/skills/` for user-wide skills. A skill directory contains a
-`SKILL.md` with standard `name` and `description` frontmatter; supporting files
-may live anywhere below that directory.
-
-The optional project `skills.json` file is a small registry containing only
-the skill catalog metadata and location. It can override the description or
-location discovered from a standard directory:
-
-```json
-{
-  "skills": [
-    {
-      "name": "project-summary",
-      "description": "Inspect a project and summarize its structure.",
-      "location": ".agents/skills/project-summary"
-    }
-  ]
-}
-```
-
-Subagent profiles opt into skills with their `skills` array in
-`subagents.json`. The harness adds those skills to that subagent's catalog;
-the model calls `activate_skill` when it needs the full `SKILL.md`. Activation
-also reports the skill directory and all supporting files, so a skill can use
-its own arbitrary layout. Skill instructions are workflow guidance and do not
-grant tools or permissions. The root orchestrator does not receive the
-subagent skill catalog automatically; it only receives the project
-`AGENTS.md` context and delegates focused work.
-
-For `read_file`, an existing workspace path takes precedence. A missing relative
-path falls back to a unique readable file in assigned skill roots; multiple
-matches return an ambiguity error. Use, for example,
-`{"path": "data/check.json", "skill": "lab-resource-check"}` to select an assigned
-skill explicitly. This requires a relative path contained in that skill and
-within existing read grants, with no workspace fallback. Absolute paths retain
-the existing workspace/allowed-root checks. Permission errors, directories, and
-dangling workspace symlinks do not trigger fallback.
-
-Each successful activation adds one protected instruction message containing
-the complete skill content. Repeated activation reuses that message. Failed
-activations and unrelated tool output are not protected. Compaction preserves
-the instructions intact while safely dropping old tool exchanges; protected
-tool exchanges from older histories are retained as complete pairs. An empty
-profile `skills` array permits no skill activation, even if the subagent
-requests access to `activate_skill`.
+Skills provide reusable workflow instructions through `SKILL.md` directories
+in `.agents/skills/` or `~/.agents/skills/`, with optional catalog overrides in
+`skills.json`. Profiles select skills to activate as needed; skill instructions
+survive compaction and do not grant tools or permissions. See
+[skills and file access](src/harness/subagents/README.md#skills-and-file-access)
+for setup and the [skill capability walkthrough](docs/skill-capability-walkthrough.md)
+for manual scenarios.
 
 ## Dynamic tool capabilities
 
-Every configured subagent receives `list_available_tools` and `request_tool`
-when those controls are installed. Discovery lists installed native and artifact
-tool names and descriptions without executing commands, granting access, or
-saving profile changes. Invalid artifacts are reported per entry while valid
-tools remain listed. Directory enumeration errors return `discovery_failed`;
-they do not establish that tools are missing. `available` means assigned to this
-session; `requires_approval` means unassigned, not a guarantee of policy approval.
-If a subagent needs a built-in or artifact tool installed but not in its profile, it
-can explain why and request it. The harness asks for approval, adds the tool
-to the current subagent session, and returns control to the model so it can
-retry with the new definition. A second, separate approval asks whether that
-access should be saved to the profile's `tools` array in `subagents.json`.
-Requests execute through the configured tool handler and registry, so an
-unregistered request tool cannot grant access. Profile saves re-read the file
-after approval, serialize updates within the process, and replace the file
-atomically to preserve edits made while the prompt was open.
-
-Shared subagent instructions preserve each profile's role and task boundaries:
-use assigned tools first, discover missing capabilities, then request installed
-tools as needed. Required skill steps must not be silently skipped. Runtime,
-dependency, and credential failures need diagnosis; they do not establish a
-missing harness tool. Respect denials without repeating the same denied request
-or bypassing it through another tool.
-
-Capability controls return JSON text in the existing `ToolResult.content` string,
-with `status`, a readable `message`, and `next_step`. Request results distinguish
-enabled, already available, not installed, configuration, validation, and load
-failures. Authoring reports creation or failure; permission denial reports
-`access_denied`. Ordinary tool output remains unchanged. No automatic recovery
-loops or extra model calls are introduced. Declining to save access leaves an
-enabled tool available in the current session.
-
-The `tool_authoring` tool is separate from ordinary tool activation. An
-authorized tool-builder can create a command-backed tool artifact under
-`~/.<harness-name>/tool-artifacts/<tool-name>/`, containing a `manifest.json`
-and its supporting files. Set the harness identity with `--harness-name` or
-`HARNESS_NAME`; by default it uses the installed package name. The artifact
-command can use any installed runtime, such as Python, Node, or a compiled
-program. The harness sends tool arguments as JSON on stdin, returns stdout as
-the tool result, and surfaces stderr as diagnostics. The artifact is validated
-and registered for the current session without modifying the harness
-installation or the target project; existing artifacts are never overwritten.
-Other subagents can request the created tool by name through `request_tool`.
-Saved access is available to subsequent delegations in the same process and
-when profiles load after restarting, for both native tools and artifacts. Saving
-access to a profile remains a separate approval; discovery never grants
-access or executes artifact code. Creating and using the artifact still go
-through normal tool approval. Review authored commands and files before reuse.
-Authoring is an explicit, narrowly scoped supplementary option only when the
-capability is truly missing, never an automatic fallback or a replacement for
-native tools. Guidance suggests it only if installed; an unassigned authoring
-tool must first be requested. Creation never bypasses a denial.
-
-For example, a Node artifact can include `main.js` and use a manifest command
-such as `["node", "{artifact_dir}/main.js"]`. The command runs with the target
-project as its working directory, reads one JSON object from stdin, and writes
-its result to stdout. Simple relative arguments naming bundled files (such as
-`main.js`) also resolve to the artifact directory. Commands can use
-`{workspace_dir}` for an explicit project path. The environment supplies:
-
-- `HARNESS_WORKSPACE_DIR`: the target project's absolute path.
-- `HARNESS_ARTIFACT_DIR`: the artifact's absolute path.
-- `HARNESS_SKILL_DIRS`: a JSON object mapping the current subagent's allowed
-  skill names to their absolute directories.
-
-The data directory name can also be configured without changing the artifact format:
-
-```sh
-HARNESS_NAME=my-agent-harness python -m harness
-# or
-python -m harness --harness-name my-agent-harness
-```
-
-Tool handlers use stdout-style tool results for model-visible structured
-output. Bash stderr is surfaced as operational progress in the terminal UI
-and transcript, without creating an extra provider request for each line; a
-failed command also returns a concise stderr diagnostic in its tool result.
-Shell and artifact commands share the process runner in `tools/process.py`,
-including stderr streaming and POSIX process-group cancellation. Artifact
-command preparation lives in `tools/artifacts.py`; `tools/loader.py` loads and
-validates definitions. Artifacts use one `files`/`command` format for every
-language, including Python.
+Subagents can discover installed tools, request session access, and separately
+approve saving access to their profile. Authorized tool authoring can create
+reusable command-backed artifacts outside the project. The
+[subagent guide](src/harness/subagents/README.md#tool-access-and-persistence)
+explains access, persistence, and artifact creation.
 
 ## Built-in tool configuration
 
@@ -448,8 +316,8 @@ To add a tool to this harness:
 Handlers in the project `tools.json` are trusted Python code loaded from the
 harness's `harness.tools.handlers` package. JSON controls the tool definition
 exposed to the model; it does not bypass permission checks or create
-executable behavior. User-authored handlers are the separate artifacts
-described above and are loaded only after the authoring tool creates them.
+executable behavior. For user-authored command-backed tools, see
+[artifact authoring](src/harness/subagents/README.md#artifact-authoring).
 
 ## Architecture
 

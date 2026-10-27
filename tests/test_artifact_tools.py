@@ -87,7 +87,9 @@ async def test_builder_artifact_is_requestable_by_another_agent_and_reloadable(t
     )
     context = ToolContext(
         tmp_path,
-        persist_tool_access=make_profile_tool_access_persister(profiles_path, "coder", approve),
+        persist_tool_access=make_profile_tool_access_persister(
+            profiles_path, "coder", approve, catalog
+        ),
         tool_catalog=catalog,
     )
     coder = Agent(
@@ -232,7 +234,9 @@ async def test_authoring_persists_profile_access_only_with_separate_approval(tmp
     context = ToolContext(
         tmp_path,
         artifact_root=catalog.artifact_root,
-        persist_tool_access=make_profile_tool_access_persister(profiles_path, "builder", approve),
+        persist_tool_access=make_profile_tool_access_persister(
+            profiles_path, "builder", approve, catalog
+        ),
     )
 
     result = await catalog["tool_authoring"].execute(context, artifact_arguments())
@@ -255,3 +259,37 @@ async def test_inline_command_arguments_are_not_required_to_be_paths(tmp_path):
 
     assert not result.is_error
     assert result.content.strip() == "ok"
+
+
+@pytest.mark.parametrize("kind", ["native", "artifact"])
+async def test_authoring_rejects_installed_names_without_replacement(tmp_path, kind):
+    catalog = ToolCatalog(load_tools(TOOLS), tmp_path / "artifacts")
+    registry = ToolRegistry()
+    context = ToolContext(
+        tmp_path,
+        artifact_root=catalog.artifact_root,
+        tool_catalog=catalog,
+        tool_registry=registry,
+    )
+    arguments = artifact_arguments()
+    if kind == "artifact":
+        assert not (await catalog["tool_authoring"].execute(context, arguments)).is_error
+        directory = catalog.artifact_root / "math_helper"
+        before = {path.name: path.read_bytes() for path in directory.iterdir()}
+    else:
+        arguments["name"] = "bash"
+    name = arguments["name"]
+    installed = catalog[name]
+    registered = registry.get(name)
+    arguments["files"] = {"replacement.py": "raise RuntimeError('replaced')"}
+
+    result = await catalog["tool_authoring"].execute(context, arguments)
+
+    assert result.is_error
+    assert json.loads(result.content)["status"] == "already_installed"
+    assert catalog[name] == installed
+    assert registry.get(name) is registered
+    if kind == "artifact":
+        assert {path.name: path.read_bytes() for path in directory.iterdir()} == before
+    else:
+        assert not (catalog.artifact_root / name).exists()

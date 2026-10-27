@@ -57,7 +57,8 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
         profiles["lab"] = replace(profiles["lab"], tools=(catalog["tool_authoring"],))
     if outcome == "existing":
         raw = json.loads(path.read_text())
-        raw["profiles"]["lab"]["tools"].append(name)
+        field = "tools" if kind == "native" else "tool_artifacts"
+        raw["profiles"]["lab"].setdefault(field, []).append(name)
         path.write_text(json.dumps(raw))
     if outcome == "failed":
 
@@ -106,6 +107,7 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
                     path,
                     profile.name,
                     approve,
+                    catalog,
                     report_error=errors.append,
                     on_saved=lambda tool_name: manager.grant_tool_access(
                         profile.name, catalog[tool_name]
@@ -123,11 +125,20 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
     assert await handle.run("Acquire") == "done"
     assert created[0].tools.get(name) is not None
     saved = outcome in {"saved", "existing"}
+    acquisition = json.loads(created[0].provider.calls[-1][0][-1].content[0].content)
+    saved_note = "Access was saved" if kind == "artifact_authoring" else "also saved"
+    assert (saved_note in acquisition["message"]) == saved
     assert (name in [t.definition.name for t in manager.tools_for_profile("lab")]) == saved
     assert name not in [t.definition.name for t in manager.tools_for_profile("other")]
     assert manager.profiles["lab"].system_prompt == "Test tools"
     assert bool(errors) == (outcome == "failed")
     assert len(approvals) == (0 if outcome == "existing" else 1)
+    stored = json.loads(path.read_text())["profiles"]["lab"]
+    field = "tools" if kind == "native" else "tool_artifacts"
+    assert (name in stored.get(field, [])) == saved
+    assert name not in stored.get("tool_artifacts" if kind == "native" else "tools", [])
+    if outcome in {"denied", "failed"}:
+        assert "tool_artifacts" not in stored
 
     # Both a pre-save handle and a pre-bound delegation tool resolve the update.
     assert await handle.run("Execute") == "done"
@@ -148,6 +159,17 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
 
 async def test_concurrent_saves_merge_and_cached_agent_syncs(tmp_path):
     catalog = ToolCatalog(load_tools(TOOLS), tmp_path / "artifacts")
+    result = await catalog["tool_authoring"].execute(
+        ToolContext(tmp_path, artifact_root=catalog.artifact_root, tool_catalog=catalog),
+        {
+            "name": "runtime_helper",
+            "description": "Helper",
+            "input_schema": {"type": "object"},
+            "files": {"run.py": 'print("ok")'},
+            "command": [sys.executable, "run.py"],
+        },
+    )
+    assert not result.is_error
     path, profiles = setup_profiles(tmp_path, catalog, reuse=True)
     created = []
 
@@ -176,14 +198,20 @@ async def test_concurrent_saves_merge_and_cached_agent_syncs(tmp_path):
         path,
         "lab",
         approve,
+        catalog,
         on_saved=lambda name: manager.grant_tool_access("lab", catalog[name]),
     )
-    assert await asyncio.gather(persist("bash"), persist("read_file")) == [True, True]
+    assert await asyncio.gather(persist("bash"), persist("runtime_helper")) == [True, True]
     await handle.run("Use saved grants")
     assert len(created) == 1
-    assert {"bash", "read_file", "write_file"} <= {
+    assert {"bash", "runtime_helper", "write_file"} <= {
         item.name for item in created[0].tools.definitions()
     }
-    assert {"bash", "read_file"} <= {item.definition.name for item in manager.profiles["lab"].tools}
+    assert {"bash", "runtime_helper"} <= {
+        item.definition.name for item in manager.profiles["lab"].tools
+    }
+    stored = json.loads(path.read_text())["profiles"]["lab"]
+    assert stored["tools"] == ["bash"]
+    assert stored["tool_artifacts"] == ["runtime_helper"]
     assert "write_file" not in {item.definition.name for item in manager.profiles["lab"].tools}
     assert "bash" not in {item.definition.name for item in manager.profiles["other"].tools}

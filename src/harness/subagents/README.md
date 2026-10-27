@@ -6,48 +6,112 @@ need stateful conversations.
 
 ## Profiles
 
-The profiles currently configured in this repository are:
+Profiles are loaded from `subagents.json` in the configured working directory.
+The file is authoritative: if it is missing or its `profiles` object is empty,
+the harness has no subagents. Copy or create it to configure another project.
 
-- `explorer` — read-only inspection through `read_file`
-- `coder` — `read_file`, `write_file`, and `bash`
-- `gmail` — Gmail MCP tools only; searches/reads mail and can create drafts.
-  It cannot directly send mail and treats email content as untrusted input.
+For example, after installing an artifact named `csv_summary`:
 
-Each profile also defines a system prompt, maximum turns, permission mode, and
-whether its `Agent` may be reused. Profiles are loaded from
-`subagents.json` in the configured working directory. The file is authoritative:
-if it is missing or has no profiles, the harness has no subagents. Default
-configured profiles run with fresh isolated agent state for every delegation. Reuse is
-available for explicitly stateful profiles.
+```json
+{
+  "profiles": {
+    "analyst": {
+      "description": "Inspect files and summarize CSV data.",
+      "system_prompt": "Analyze the assigned files and report findings.",
+      "permission_mode": "inherit",
+      "tools": ["read_file"],
+      "tool_artifacts": ["csv_summary"],
+      "skills": ["project-summary"],
+      "max_turns": 10,
+      "reuse": false
+    }
+  }
+}
+```
 
-Profiles may also list portable skills in `skills`. The subagent receives a
-catalog of those skills and activates one with `activate_skill` when needed;
-the full skill instructions and supporting-file inventory are then loaded into
-that subagent's conversation. Skills do not grant tools. The harness adds the
-`list_available_tools` and `request_tool` controls to each profile when installed,
-so a subagent can discover installed native/artifact tools and ask for an
-installed capability during a session; saving that access to JSON is a
-separate approval.
+The profile name determines its delegation tool, here `delegate_analyst`.
+`description`, `system_prompt`, `permission_mode`, and `tools` are required.
+Permission modes are `inherit`, `ask`, `auto_allow`, and `deny`.
+`max_turns` defaults to 10 and must be a positive integer; `reuse` defaults to
+false, giving each delegation fresh isolated state.
 
-System prompt assembly includes shared instructions from `instructions.py`
-alongside the profile prompt and allowed skill catalog. Recovery must stay
-within the assigned role: use assigned tools first, discover installed tools,
-and request unassigned capabilities. Discovery never executes, grants, or saves
-access; invalid artifact entries do not prevent valid entries from being listed.
-`available` and `requires_approval` describe session assignment, not a guarantee
-of execution policy approval. Required skill steps must not be silently skipped.
-Runtime, dependency, and credential failures are distinct from missing tools.
+The required `tools` array names native tools, including `tool_authoring` when
+needed. Optional `tool_artifacts` names user-generated tools and defaults to
+`[]`. Both contain strings resolved against installed tools by actual origin.
+Unknown names, wrong-field assignments, and duplicates within or across the
+arrays are rejected. Both arrays feed the same runtime tool set and follow
+the same discovery, approval, and execution policy.
 
-Requests, authoring results, and permission denials use JSON text in the existing
-tool result string with `status`, `message`, and `next_step`. Denials report
-`access_denied`; respect them without repeating the same request or bypassing
-them. There are no automatic recovery loops or extra model calls. Declining a
-profile save does not revoke access already granted for the current session.
+`skills` defaults to `[]`. MCP-only profiles can use `"tools": []` and
+`"requires_tools": true` to require tools before running; `requires_tools`
+defaults to false. Tool implementations and permission enforcement remain in
+Python.
 
-The JSON profile name becomes the delegation profile name. Its `tools` array
-references built-in tool names; MCP-only profiles can use an empty array and
-set `requires_tools` to true. Add or remove profiles by editing the JSON file;
-tool implementations, permission checks, and MCP loading remain in Python.
+## Skills and file access
+
+The harness discovers portable skills from the project's `.agents/skills/`
+and user-wide `~/.agents/skills/`. Each skill directory contains `SKILL.md`
+with `name` and `description` frontmatter and may contain supporting files in
+any layout. Optional project `skills.json` entries override catalog descriptions
+or locations:
+
+```json
+{
+  "skills": [
+    {
+      "name": "project-summary",
+      "description": "Inspect a project and summarize its structure.",
+      "location": ".agents/skills/project-summary"
+    }
+  ]
+}
+```
+
+A profile's `skills` array selects its catalog. The subagent calls
+`activate_skill` to load the full instructions, skill directory, and supporting
+file inventory. Successful activation adds a protected instruction message;
+repeated activation reuses it, and compaction preserves its complete content.
+Skills grant neither tools nor permissions, and an empty `skills` array permits
+no activation. The root orchestrator receives project `AGENTS.md` context
+rather than the subagent skill catalog.
+
+For `read_file`, an existing workspace path takes precedence. A missing relative
+path falls back to a unique readable file in assigned skill roots; multiple
+matches are ambiguous. To select an assigned skill explicitly, use, for example,
+`{"path": "references/guide.md", "skill": "project-summary"}`. The relative path
+must remain inside that skill and existing read grants, with no workspace
+fallback. Absolute paths follow workspace/allowed-root checks. Permission
+errors, directories, and dangling workspace symlinks do not trigger fallback.
+
+See the [skill capability walkthrough](../../../docs/skill-capability-walkthrough.md)
+for manual activation, approval, failure, and artifact scenarios.
+
+## Tool access and persistence
+
+When installed, `list_available_tools` and `request_tool` are added to each
+profile. Discovery lists installed native and artifact tools without executing
+commands, granting access, or saving configuration. Invalid artifacts are
+reported individually while valid entries remain listed. A discovery failure
+does not establish that tools are missing. `available` means assigned to the
+current session; `requires_approval` means unassigned. Execution still follows
+the permission policy.
+
+Use assigned tools first, then discover and request installed capabilities as
+needed within the profile's role. An approved `request_tool` adds the definition
+to the current session so the subagent can use it. A separate approval offers
+to save access in `subagents.json`. Declining or failing to save leaves current
+session access intact but grants no future profile access.
+
+Approved saves choose `tools` or `tool_artifacts` by tool origin and initialize
+a missing `tool_artifacts` array only when saving. Saves re-read the file after
+approval and replace it atomically, preserving edits made while the prompt was
+open. Saved access applies to subsequent delegations in the same process and
+after restart, for both native tools and artifacts.
+
+Capability controls return JSON text with `status`, `message`, and `next_step`.
+Respect denials without retrying the same request or bypassing them through
+another tool. Diagnose runtime, dependency, and credential failures rather than
+assuming a missing capability; required skill steps must not be silently skipped.
 
 ## Delegation
 
@@ -83,25 +147,49 @@ the actual file operation or shell command is displayed and must be approved
 before it runs. In non-interactive mode, it follows the same `--allow-tools`
 setting as the root agent.
 
-Consequently, file changes and shell commands must be performed by the `coder`
-subagent, even when the task is initiated interactively by the root agent.
-
 The `gmail` profile inherits the same tool approval policy. Interactive Gmail
 actions require approval, and Gmail MCP tools are scoped only to this profile.
 
-The optional `tool-builder` profile can use `tool_authoring` to create a
-user-owned command-backed tool under
-`~/.<harness-name>/tool-artifacts/`. It can use any command-line runtime
-installed on the system. The creating subagent can use it immediately; other
-subagents can request it by name, subject to approval. A separate approval can
-save access in a profile, and saved artifact names resolve after restart.
-Discovery does not automatically grant a tool to another subagent. Artifact
-commands run in the target project and receive explicit artifact and allowed
-skill paths through their environment.
-Authoring requires an explicit, authorized choice for narrowly scoped
-supplementary creation when a capability is truly missing. It is never an
-automatic fallback or a way to replace native tools. If installed but unassigned,
-request `tool_authoring` first; if absent, report the limitation.
+## Artifact authoring
+
+An authorized subagent with `tool_authoring` can create a reusable command-backed
+tool under `~/.<harness-name>/tool-artifacts/<tool-name>/`, containing
+`manifest.json` and supporting files. Existing artifacts are never overwritten;
+creation does not modify the harness installation or target project. The artifact
+is validated and registered for the creating session. Other subagents request it
+by name using the access and save approvals described above.
+
+Authoring requires an explicit, authorized choice for a narrowly scoped missing
+capability. It is not an automatic fallback or a replacement for native tools,
+and never bypasses a denial. If installed but unassigned, request
+`tool_authoring` first; if absent, report the limitation. Creation and execution
+follow normal tool approval. Review authored commands and files before reuse.
+
+Artifacts use the same `files`/`command` format for any installed runtime,
+including Python, Node, or compiled programs. For example, include `main.js`
+and set the manifest command to `["node", "{artifact_dir}/main.js"]`.
+The command runs in the target project, reads one JSON object from stdin, and
+writes its result to stdout; stderr supplies diagnostics. Simple relative
+arguments naming bundled files, such as `main.js`, resolve to the artifact
+directory. Use `{workspace_dir}` for an explicit project path.
+
+The command environment provides:
+
+- `HARNESS_WORKSPACE_DIR`: the target project's absolute path.
+- `HARNESS_ARTIFACT_DIR`: the artifact's absolute path.
+- `HARNESS_SKILL_DIRS`: a JSON object mapping the current subagent's allowed
+  skill names to their absolute directories.
+
+The harness name defaults to the installed package name. Choose a storage
+namespace with either:
+
+```sh
+HARNESS_NAME=my-agent-harness python -m harness
+python -m harness --harness-name my-agent-harness
+```
+
+For adding native Python handlers to the harness itself, see
+[built-in tool configuration](../../../README.md#built-in-tool-configuration).
 
 ## MCP tools
 

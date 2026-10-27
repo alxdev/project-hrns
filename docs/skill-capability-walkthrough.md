@@ -19,8 +19,12 @@ scenarios do not require MCP services. Inspect `/agents` for `agent_skill-lab`;
 the actual model-facing delegation tool is `delegate_skill-lab`. It is not a
 slash command. Each prompt below explicitly asks the root to use that tool.
 
-The profile starts with only `read_file` plus automatically attached discovery,
-request, and skill activation controls. It inherits the parent permission policy.
+Inspect `skill-lab` in `subagents.json` before running a scenario. Its native
+`tools` currently include `read_file`, `bash`, and `tool_authoring`, plus
+automatically attached discovery, request, and skill activation controls.
+The separate `tool_artifacts` array starts empty. Existing saved native access
+is preserved; acquisition tests below require the named tool to be unassigned.
+It inherits the parent permission policy.
 In interactive inherited ask mode, expect approval for activation, reads,
 discovery, requests, and execution. Approving request_tool grants access; a
 separate save prompt controls profile persistence; executing the tool has its
@@ -159,7 +163,14 @@ delegation, accept the access persistence prompt, and execute. In another fresh
 delegation in the same process, and again after restart, the saved tool should
 be assigned immediately, with execution still subject to policy. Discovery lists
 durable artifacts even when access was not saved. Saving tool_authoring access
-is separate from saving the authored tool.
+is separate from saving the authored tool: the native `tool_authoring` name goes
+in `skill-lab.tools`, while `lab_text_metrics_v1` goes in
+`skill-lab.tool_artifacts`. Both fields contain string names; `tools` is required
+and `tool_artifacts` defaults to `[]` when omitted. Missing artifact arrays are
+initialized only by an approved save. Duplicate names within or across fields,
+unknown names, and names in the wrong field are rejected, with no automatic
+migration from old artifact entries in `tools`. This configuration separation
+does not change discovery, approval, execution, or delegation behavior.
 
 ## Role boundary and reruns
 

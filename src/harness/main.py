@@ -250,6 +250,7 @@ async def main(argv: list[str] | None = None) -> int:
             config.working_directory / "subagents.json",
             profile.name,
             approve_persist_tool,
+            tool_catalog,
             report_error=output.error if output is not None else None,
             # The factory runs only after the manager has been initialized.
             on_saved=lambda name: subagents.grant_tool_access(profile.name, tool_catalog[name]),
