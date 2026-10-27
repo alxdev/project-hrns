@@ -79,8 +79,9 @@
         "type": "object",
         "properties": {
           "name": {"type": "string", "description": "New tool name."},
+          "replace_invalid": {"type": "boolean", "default": false, "description": "Recreate an existing invalid artifact with a complete replacement and separate direct user confirmation. Preserves the original in an INVALID_ archive, including if installation then fails; no automatic rollback. Valid and native tools are protected."},
           "description": {"type": "string", "description": "Tool description."},
-          "input_schema": {"type": "object", "description": "JSON schema for tool arguments."},
+          "input_schema": {"type": "object", "description": "Valid JSON Schema for tool arguments with explicit root type object; define named inputs under properties and required as an array of property names."},
           "files": {
             "type": "object",
             "description": "Relative file paths mapped to text contents; may use any language supported by the selected runtime.",
@@ -88,7 +89,7 @@
           },
           "command": {
             "type": "array",
-            "description": "Command and arguments. Runs in the target project; use {artifact_dir} for bundled files and {workspace_dir} for the project. JSON arguments arrive on stdin. HARNESS_SKILL_DIRS contains allowed skill paths as JSON.",
+            "description": "Exec argv array, not shell text: keep executable and each argument separate, e.g. [\"python3\", \"{artifact_dir}/main.py\"]. Paths with spaces remain a single entry. Creation validates the definition without executing or verifying behavior. Run approved representative input and compare the requested result before claiming completion. Runs in the target project; use {artifact_dir} for bundled files and {workspace_dir} for the project. JSON arguments arrive on stdin. HARNESS_SKILL_DIRS contains allowed skill paths as JSON.",
             "items": {"type": "string"},
             "minItems": 1
           }

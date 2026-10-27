@@ -106,9 +106,9 @@ async def test_builder_artifact_is_requestable_by_another_agent_and_reloadable(t
     # A fresh catalog and fresh profiles reproduce a new process startup.
     restarted = ToolCatalog(native, catalog.artifact_root)
     profiles = load_profiles(profiles_path, restarted)
-    restored_tool = next(
-        tool for tool in profiles["coder"].tools if tool.definition.name == "math_helper"
-    )
+    assert "math_helper" in profiles["coder"].tool_artifacts
+    assert all(tool.definition.name != "math_helper" for tool in profiles["coder"].tools)
+    restored_tool = restarted["math_helper"]
     assert (
         await restored_tool.execute(ToolContext(tmp_path), {"a": 3, "b": 4})
     ).content.strip() == "7"
@@ -245,7 +245,7 @@ async def test_authoring_persists_profile_access_only_with_separate_approval(tmp
     assert "math_helper" in catalog
     assert approvals == [("save_tool_access", {"profile": "builder", "tool": "math_helper"})]
     restored = load_profiles(profiles_path, ToolCatalog(load_tools(TOOLS), catalog.artifact_root))
-    assert ("math_helper" in {tool.definition.name for tool in restored["builder"].tools}) is save
+    assert ("math_helper" in restored["builder"].tool_artifacts) is save
 
 
 async def test_inline_command_arguments_are_not_required_to_be_paths(tmp_path):

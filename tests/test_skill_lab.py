@@ -19,7 +19,25 @@ LAB_SKILLS = ("lab-resource-check", "lab-command-check", "lab-text-metrics")
 
 def test_lab_catalog_and_profile_resolve_without_user_home(tmp_path):
     catalog = load_skills(ROOT / "skills.json", ROOT, tmp_path / "isolated-user")
-    profiles = load_profiles(ROOT / "subagents.json", load_tools(ROOT / "tools.json"))
+    # Model the lab's required capabilities without inheriting mutable profile
+    # grants or resolving any environment-owned artifacts.
+    config = {
+        "profiles": {
+            "skill-lab": {
+                "description": "Run isolated lab fixture checks.",
+                "system_prompt": "Use only the assigned lab fixtures and capabilities.",
+                "tools": ["read_file", "bash", "tool_authoring"],
+                "tool_artifacts": [],
+                "skills": ["hello-workflow", *LAB_SKILLS],
+                "permission_mode": "inherit",
+                "reuse": False,
+                "max_turns": 30,
+            }
+        }
+    }
+    profile_path = tmp_path / "subagents.json"
+    profile_path.write_text(json.dumps(config), encoding="utf-8")
+    profiles = load_profiles(profile_path, load_tools(ROOT / "tools.json"))
     profile = profiles["skill-lab"]
     assert profile.skills == ("hello-workflow", *LAB_SKILLS)
     assert profile.permission_mode == "inherit"
@@ -34,7 +52,6 @@ def test_lab_catalog_and_profile_resolve_without_user_home(tmp_path):
         "request_tool",
     }
     assert DelegationTool(profile.name, profile.description).definition.name == "delegate_skill-lab"
-    assert {"explorer", "coder", "gmail", "tool-builder"} <= profiles.keys()
     assert {"hello-workflow", "project-summary"} <= catalog.skills.keys()
     for name in LAB_SKILLS:
         skill = catalog.get(name)

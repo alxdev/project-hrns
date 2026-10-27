@@ -27,6 +27,10 @@ class ToolContext:
     artifact_root: Path | None = None
     tool_catalog: Mapping[str, Tool] | None = None
     tool_name: str = ""
+    approve_artifact_replacement: (
+        Callable[[ToolDefinition, dict[str, Any]], Awaitable[bool]] | None
+    ) = None
+    on_artifact_replaced: Callable[[Tool], None] | None = None
 
 
 def resolve_read_path(context: ToolContext, value: str, *, skill: str | None = None) -> Path:

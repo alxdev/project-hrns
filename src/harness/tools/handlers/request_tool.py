@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from harness.api.types import ToolResult
+from harness.tools.artifact_errors import InvalidArtifactError
+from harness.tools.artifacts import ArtifactTool
 from harness.tools.base import ToolContext
 from harness.tools.results import capability_result
 
@@ -32,7 +34,8 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
             "Report the configuration issue.",
             is_error=True,
         )
-    if registry.get(name) is not None:
+    existing = registry.get(name)
+    if existing is not None and not isinstance(existing, ArtifactTool):
         return capability_result(
             "already_available",
             f"tool {name!r} is already available",
@@ -40,6 +43,19 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
         )
     try:
         tool = context.tool_catalog.get(name)
+    except InvalidArtifactError as exc:
+        if isinstance(existing, ArtifactTool):
+            registry.unregister(name)
+        return capability_result(
+            "existing_artifact_invalid",
+            str(exc),
+            "Use tool_authoring with replace_invalid=true and a complete replacement; "
+            "separate explicit user approval is required. Do not retry automatically.",
+            is_error=True,
+            name=exc.name,
+            path=str(exc.path),
+            reason=exc.reason,
+        )
     except (OSError, ValueError) as exc:
         return capability_result(
             "load_failed",
@@ -48,6 +64,8 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
             is_error=True,
         )
     if tool is None:
+        if isinstance(existing, ArtifactTool):
+            registry.unregister(name)
         next_step = "Report the missing capability; do not create a tool automatically."
         try:
             authoring = context.tool_catalog.get("tool_authoring")
@@ -64,9 +82,21 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
             )
         return capability_result(
             "not_installed",
-            f"tool {name!r} is not installed in this harness",
+            (
+                f"tool artifact {name!r} at {existing.directory}: missing artifact directory"
+                if isinstance(existing, ArtifactTool)
+                else f"tool {name!r} is not installed in this harness"
+            ),
             next_step,
             is_error=True,
+        )
+    if existing is not None:
+        # Valid definitions stay fixed within this delegation. Only invalid or
+        # missing artifacts revoke a grant here; normal refresh is at delegation.
+        return capability_result(
+            "already_available",
+            f"tool {name!r} is already available",
+            "Use the tool subject to execution policy.",
         )
     registry.register(tool)
     persisted = await context.persist_tool_access(name) if context.persist_tool_access else False

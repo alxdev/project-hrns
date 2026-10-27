@@ -6,10 +6,13 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from stat import S_ISDIR, S_ISREG
 from typing import Any, cast
 
 from harness.api.types import ToolDefinition, ToolResult
 
+from .artifact_errors import InvalidArtifactError
+from .artifact_validation import validate_artifact_definition
 from .artifacts import ArtifactTool
 from .base import Tool, ToolContext
 
@@ -47,34 +50,40 @@ def load_artifact_tool(artifact_root: Path, name: str) -> ArtifactTool:
     """Validate an artifact manifest without executing its command or files."""
     if not _HANDLER_NAME.fullmatch(name):
         raise ValueError("tool artifact names must be simple module names")
-    root = (artifact_root.resolve() / name).resolve()
+    root = artifact_root.resolve() / name
     try:
-        root.relative_to(artifact_root.resolve())
-    except ValueError as exc:
-        raise ValueError("tool artifact escapes the artifact directory") from exc
+        root_info = root.lstat()
+    except FileNotFoundError as exc:
+        raise KeyError(name) from exc
     try:
+        if artifact_root.is_symlink() or not S_ISDIR(root_info.st_mode):
+            raise ValueError("artifact must be a real directory, not a symlink")
+        manifest_info = (root / "manifest.json").lstat()
+        if not S_ISREG(manifest_info.st_mode):
+            raise ValueError("manifest.json must be a regular file, not a symlink or special file")
         config = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise ValueError(f"tool artifact {name!r} is missing manifest.json") from exc
+        raise InvalidArtifactError(name, root, "missing manifest.json") from exc
     except json.JSONDecodeError as exc:
-        raise ValueError(f"invalid tool artifact manifest for {name!r}: {exc.msg}") from exc
-    except (OSError, UnicodeError) as exc:
-        raise ValueError(f"cannot read tool artifact {name!r}: {exc}") from exc
+        raise InvalidArtifactError(name, root, f"invalid manifest JSON: {exc.msg}") from exc
+    except UnicodeError as exc:
+        raise InvalidArtifactError(name, root, "manifest.json must be valid UTF-8") from exc
+    except IsADirectoryError as exc:
+        raise InvalidArtifactError(name, root, "manifest.json must be a regular file") from exc
+    except ValueError as exc:
+        raise InvalidArtifactError(name, root, str(exc)) from exc
     if not isinstance(config, dict):
-        raise ValueError(f"tool artifact {name!r} manifest must be an object")
+        raise InvalidArtifactError(name, root, "manifest must be an object")
     description = config.get("description")
     input_schema = config.get("input_schema")
     command = config.get("command")
-    if not isinstance(description, str) or not description.strip():
-        raise ValueError(f"tool artifact {name!r} requires a description")
-    if not isinstance(input_schema, dict):
-        raise ValueError(f"tool artifact {name!r} requires an input_schema object")
-    if (
-        not isinstance(command, list)
-        or not command
-        or not all(isinstance(part, str) and part and "\0" not in part for part in command)
-    ):
-        raise ValueError(f"tool artifact {name!r} requires a non-empty command array")
+    try:
+        validate_artifact_definition(description, input_schema, command)
+    except ValueError as exc:
+        raise InvalidArtifactError(name, root, str(exc)) from exc
+    assert isinstance(description, str)
+    assert isinstance(input_schema, dict)
+    assert isinstance(command, list)
     return ArtifactTool(ToolDefinition(name, description, input_schema), root, tuple(command))
 
 

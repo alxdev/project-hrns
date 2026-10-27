@@ -5,8 +5,10 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from harness.tools.artifact_errors import InvalidArtifactError
 from harness.tools.artifacts import ArtifactTool
 from harness.tools.base import Tool
+from harness.tools.catalog import ToolCatalog
 
 from .models import SubagentProfile
 
@@ -37,11 +39,17 @@ def load_profiles(
         raise ValueError(f"{path} must contain a 'profiles' object")
 
     tool_by_name = (
-        tools if isinstance(tools, Mapping) else {tool.definition.name: tool for tool in tools}
+        tools.native_tools
+        if isinstance(tools, ToolCatalog)
+        else tools
+        if isinstance(tools, Mapping)
+        else {tool.definition.name: tool for tool in tools}
     )
     profiles: dict[str, SubagentProfile] = {}
     for name, config in raw["profiles"].items():
-        profiles[name] = _build_profile(path, name, config, tool_by_name)
+        profiles[name] = _build_profile(
+            path, name, config, tool_by_name, tools if isinstance(tools, ToolCatalog) else None
+        )
     return profiles
 
 
@@ -50,6 +58,7 @@ def _build_profile(
     name: object,
     config: object,
     tool_by_name: Mapping[str, Tool],
+    tool_catalog: ToolCatalog | None = None,
 ) -> SubagentProfile:
     if not isinstance(name, str) or not name.strip() or name != name.strip():
         raise ValueError(f"{path} profile names must be non-empty trimmed strings")
@@ -64,6 +73,7 @@ def _build_profile(
         raise ValueError(f"{path} profile {name!r} permission_mode must be one of: {allowed}")
 
     selected_tools: list[Tool] = []
+    unavailable_artifacts: dict[str, str] = {}
     assigned: set[str] = set()
     fields = {"tools": config.get("tools"), "tool_artifacts": config.get("tool_artifacts", [])}
     for field, configured in fields.items():
@@ -77,7 +87,28 @@ def _build_profile(
             assigned.add(tool_name)
     for field, configured in fields.items():
         for tool_name in configured:
-            tool = tool_by_name.get(tool_name)
+            if tool_catalog is not None and field == "tool_artifacts":
+                if tool_name in tool_catalog.native_tools:
+                    raise ValueError(
+                        f"{path} profile {name!r} tool {tool_name!r} belongs in tools, "
+                        "not tool_artifacts"
+                    )
+                # Retain assignment intent without touching the artifact filesystem.
+                continue
+            try:
+                tool = tool_by_name.get(tool_name)
+            except InvalidArtifactError as exc:
+                if field != "tool_artifacts":
+                    raise ValueError(
+                        f"{path} profile {name!r} tool {tool_name!r} belongs in "
+                        "tool_artifacts, not tools"
+                    ) from exc
+                unavailable_artifacts[tool_name] = str(exc)
+                continue
+            except OSError as exc:
+                raise ValueError(
+                    f"{path} profile {name!r} cannot load tool {tool_name!r}: {exc}"
+                ) from exc
             if tool is None:
                 raise ValueError(f"{path} profile {name!r} references unknown tool {tool_name!r}")
             expected = "tool_artifacts" if isinstance(tool, ArtifactTool) else "tools"
@@ -117,6 +148,9 @@ def _build_profile(
         permission_mode=permission_mode,
         reuse=reuse,
         requires_tools=requires_tools,
+        tool_artifacts=tuple(fields["tool_artifacts"]),
+        unavailable_artifacts=unavailable_artifacts,
+        tool_catalog=tool_catalog,
     )
 
 

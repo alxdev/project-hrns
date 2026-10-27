@@ -19,6 +19,9 @@ Only when a capability is truly missing may you explicitly choose tool_authoring
 for narrowly scoped supplementary creation, if installed and authorized. If tool_authoring is
 installed but unassigned, request it first. Never create tools automatically as
 a fallback, replace or overwrite native tools, or use authoring to bypass denial.
+Invalid artifacts are not absent; do not repeat creation. Never replace valid/native tools.
+Explicit tool_authoring with replace_invalid=true archives the old artifact and requires dedicated
+user confirmation; do not overwrite directly or turn failures into automatic destructive recovery.
 If recovery is unavailable, report the limitation. No automated recovery retries.
 """
 

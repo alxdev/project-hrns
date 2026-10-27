@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from harness.api.types import ToolResult
+from harness.tools.artifact_errors import InvalidArtifactError
 from harness.tools.base import ToolContext
 from harness.tools.results import capability_result
 
@@ -29,6 +30,19 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
     for name in names:
         try:
             tool = context.tool_catalog[name]
+        except InvalidArtifactError as exc:
+            errors.append(
+                {
+                    "name": name,
+                    "message": str(exc),
+                    "state": "invalid",
+                    "path": str(exc.path),
+                    "reason": exc.reason,
+                    "next_step": "Use tool_authoring with replace_invalid=true and a full "
+                    "replacement, subject to separate explicit user approval.",
+                }
+            )
+            continue
         except (OSError, ValueError, KeyError) as exc:
             errors.append({"name": name, "message": str(exc)})
             continue

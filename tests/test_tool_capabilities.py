@@ -60,26 +60,34 @@ async def test_request_tool_adds_installed_tool_before_next_provider_call(tmp_pa
     assert provider.calls[2][0][-1].content[0].content == "ran pytest"
 
 
-async def test_tool_authoring_creates_and_activates_user_artifact(tmp_path):
+async def test_tool_authoring_creates_and_activates_user_artifact(tmp_path, monkeypatch):
     tool_authoring = next(
         tool for tool in load_tools(TOOLS_PATH) if tool.definition.name == "tool_authoring"
     )
     registry = ToolRegistry()
     context = ToolContext(tmp_path, artifact_root=tmp_path / "artifacts", tool_registry=registry)
-    result = await tool_authoring.execute(
-        context,
-        {
-            "name": "math_helper",
-            "description": "Add two numbers.",
-            "input_schema": {"type": "object"},
-            "files": {
-                "run.py": (
-                    'import json,sys\nargs=json.load(sys.stdin)\nprint(args["a"] + args["b"])\n'
-                )
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("initial authoring must not execute commands")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("harness.tools.artifacts.run_process", forbidden)
+        patch.setattr("asyncio.create_subprocess_exec", forbidden)
+        patch.setattr("asyncio.create_subprocess_shell", forbidden)
+        result = await tool_authoring.execute(
+            context,
+            {
+                "name": "math_helper",
+                "description": "Add two numbers.",
+                "input_schema": {"type": "object"},
+                "files": {
+                    "run.py": (
+                        'import json,sys\nargs=json.load(sys.stdin)\nprint(args["a"] + args["b"])\n'
+                    )
+                },
+                "command": [sys.executable, "run.py"],
             },
-            "command": [sys.executable, "run.py"],
-        },
-    )
+        )
 
     assert result.is_error is False
     assert json.loads(result.content)["status"] == "created"
@@ -189,7 +197,7 @@ async def test_discovery_lists_tools_without_grants_execution_or_persistence(
         json.dumps(
             {
                 "description": "Example artifact",
-                "input_schema": {},
+                "input_schema": {"type": "object"},
                 "command": [sys.executable, "run.py"],
             }
         )
@@ -381,7 +389,7 @@ async def test_unsaved_session_grant_remains_available(tmp_path):
     [
         ("validation", "validation_error"),
         ("configuration", "configuration_error"),
-        ("load", "load_failed"),
+        ("load", "existing_artifact_invalid"),
     ],
 )
 async def test_request_failures_are_structured(tmp_path, case, status):
@@ -417,13 +425,13 @@ async def test_authoring_invalid_manifest_collision_is_structured_and_preserved(
         {
             "name": "broken",
             "description": "Supplement",
-            "input_schema": {},
+            "input_schema": {"type": "object"},
             "files": {"run.py": "print('ok')"},
             "command": [sys.executable, "run.py"],
         },
     )
     assert result.is_error
-    assert json.loads(result.content)["status"] == "load_failed"
+    assert json.loads(result.content)["status"] == "existing_artifact_invalid"
     assert manifest.read_text() == "{"
     assert not (artifact / "run.py").exists()
 

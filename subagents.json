@@ -8,7 +8,9 @@
         "bash",
         "tool_authoring"
       ],
-      "tool_artifacts": [],
+      "tool_artifacts": [
+        "lab_text_metrics_v1"
+      ],
       "skills": [
         "hello-workflow",
         "lab-resource-check",
@@ -71,7 +73,9 @@
         "tool_authoring"
       ],
       "skills": [],
-      "tool_artifacts": [],
+      "tool_artifacts": [
+        "lab_text_metrics_v1"
+      ],
       "max_turns": 12,
       "permission_mode": "inherit",
       "reuse": false,

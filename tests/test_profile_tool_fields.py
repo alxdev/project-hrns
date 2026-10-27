@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.subagents import load_profiles
+from harness.subagents import SubagentManager, load_profiles
 from harness.tools.access import make_profile_tool_access_persister
 from harness.tools.artifacts import ArtifactTool
 from harness.tools.catalog import ToolCatalog
@@ -16,7 +16,12 @@ def catalog(tmp_path):
         load_tools(Path(__file__).parents[1] / "tools.json"), tmp_path / "artifacts"
     )
     for name, content in (
-        ("helper", json.dumps({"description": "Helper", "input_schema": {}, "command": ["true"]})),
+        (
+            "helper",
+            json.dumps(
+                {"description": "Helper", "input_schema": {"type": "object"}, "command": ["true"]}
+            ),
+        ),
         ("broken", "{"),
     ):
         directory = catalog.artifact_root / name
@@ -43,8 +48,11 @@ def test_load_merges_fields_without_loading_unassigned_artifacts(tmp_path, catal
     path = write_profile(tmp_path, tools=["bash"], tool_artifacts=["helper"])
     available = catalog if as_mapping else [catalog["bash"], catalog["helper"]]
     profile = load_profiles(path, available)["test"]
-    assert [tool.definition.name for tool in profile.tools][:2] == ["bash", "helper"]
-    assert isinstance(profile.tools[1], ArtifactTool)
+    assert profile.tool_artifacts == ("helper",)
+    if as_mapping:
+        assert not any(isinstance(tool, ArtifactTool) for tool in profile.tools)
+    else:
+        assert [tool.definition.name for tool in profile.tools][:2] == ["bash", "helper"]
 
 
 def test_optional_artifacts_default_does_not_change_file(tmp_path, catalog):
@@ -77,11 +85,10 @@ def test_native_tools_field_is_required(tmp_path, catalog):
         ({"tools": ["bash", "bash"]}, "duplicate tool assignment 'bash'"),
         ({"tool_artifacts": ["helper", "helper"]}, "duplicate tool assignment 'helper'"),
         ({"tools": ["helper"], "tool_artifacts": ["helper"]}, "duplicate tool assignment"),
-        ({"tools": ["helper"]}, "belongs in tool_artifacts, not tools"),
+        ({"tools": ["helper"]}, "unknown tool 'helper'"),
         ({"tool_artifacts": ["bash"]}, "belongs in tools, not tool_artifacts"),
         ({"tools": ["missing"]}, "unknown tool 'missing'"),
-        ({"tool_artifacts": ["missing"]}, "unknown tool 'missing'"),
-        ({"tool_artifacts": ["broken"]}, "invalid tool artifact manifest"),
+        ({"tools": ["broken"]}, "unknown tool 'broken'"),
     ],
 )
 def test_invalid_tool_assignments_fail_without_migration(tmp_path, catalog, fields, match):
@@ -89,6 +96,42 @@ def test_invalid_tool_assignments_fail_without_migration(tmp_path, catalog, fiel
     original = path.read_bytes()
     with pytest.raises(ValueError, match=match):
         load_profiles(path, catalog)
+    assert path.read_bytes() == original
+
+
+def test_invalid_assigned_artifact_is_retained_but_not_exposed(tmp_path, catalog):
+    path = write_profile(tmp_path, tools=["bash"], tool_artifacts=["broken", "helper"])
+    original = path.read_bytes()
+    profile = load_profiles(path, catalog)["test"]
+    assert profile.tool_artifacts == ("broken", "helper")
+    assert profile.unavailable_artifacts == {}
+    manager = SubagentManager(lambda _: None, {"test": profile})
+    profile = manager._resolve_tools(profile)
+    assert "broken" in profile.unavailable_artifacts
+    assert str(catalog.artifact_root / "broken") in profile.unavailable_artifacts["broken"]
+    assert {tool.definition.name for tool in profile.tools} >= {"bash", "helper"}
+    assert "broken" not in {tool.definition.name for tool in profile.tools}
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("error", [PermissionError("denied"), OSError("I/O failure")])
+def test_artifact_read_failure_is_deferred_until_resolution(tmp_path, catalog, monkeypatch, error):
+    path = write_profile(tmp_path, tool_artifacts=["helper"])
+    original = path.read_bytes()
+    read_text = Path.read_text
+    manifest = catalog.artifact_root / "helper" / "manifest.json"
+
+    def fail_manifest_read(self, *args, **kwargs):
+        if self == manifest:
+            raise error
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_manifest_read)
+    profile = load_profiles(path, catalog)["test"]
+    assert not profile.unavailable_artifacts
+    manager = SubagentManager(lambda _: None, {"test": profile})
+    resolved = manager._resolve_tools(profile)
+    assert str(error) in resolved.unavailable_artifacts["helper"]
     assert path.read_bytes() == original
 
 

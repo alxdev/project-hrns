@@ -108,6 +108,21 @@ approval and replace it atomically, preserving edits made while the prompt was
 open. Saved access applies to subsequent delegations in the same process and
 after restart, for both native tools and artifacts.
 
+Artifact definitions load lazily and use a lightweight in-process cache, refreshed
+on lookup when filesystem metadata changes. Startup does not fully validate artifact
+schemas. Active definitions refresh at the next delegation or successful replacement
+callback; an explicit `request_tool` removes an active artifact that is now invalid
+or missing instead of reporting it available.
+When an invalid artifact is encountered, it is reported as unavailable; the profile
+keeps its assignment, other tools remain usable, and `subagents.json` is unchanged.
+Repair the artifact or use `tool_authoring` to recreate it. Replacing an invalid
+artifact requires a separate interactive approval to archive the existing
+directory and install the replacement; non-interactive runs cannot approve it.
+Successful replacement refreshes assigned profiles and existing session access,
+including active and cached agents. It does not grant access to other profiles or
+bypass execution permissions. Saving a new assignment still requires the usual
+save approval.
+
 Capability controls return JSON text with `status`, `message`, and `next_step`.
 Respect denials without retrying the same request or bypassing them through
 another tool. Diagnose runtime, dependency, and credential failures rather than
@@ -154,10 +169,25 @@ actions require approval, and Gmail MCP tools are scoped only to this profile.
 
 An authorized subagent with `tool_authoring` can create a reusable command-backed
 tool under `~/.<harness-name>/tool-artifacts/<tool-name>/`, containing
-`manifest.json` and supporting files. Existing artifacts are never overwritten;
-creation does not modify the harness installation or target project. The artifact
-is validated and registered for the creating session. Other subagents request it
+`manifest.json` and supporting files. Existing artifacts are protected except for
+explicitly approved recreation of invalid artifacts as described above. If
+installation fails after archival, the original remains at the reported archive
+path; there is no automatic rollback. Approval archives the original before
+replacement validation, so validation failures also leave it archived. Concurrent
+operations on the same artifact from independent processes are unsupported;
+filesystem preservation assumes a single writer. Creation does not modify the harness
+installation or target project. The artifact is validated and registered for the
+creating session. Other subagents request it
 by name using the access and save approvals described above.
+
+Authoring and loading validate JSON Schema structure with an explicit root
+`"type": "object"`, including nested `properties` and `required` constraints.
+This does not guarantee compatibility with every provider's schema subset.
+Invalid manifests are rejected on validation; existing files are never migrated
+automatically. Creation validates the definition
+without running the command or verifying its behavior. Functional verification
+requires a separately approved execution. Run representative
+input and compare the output with the requested result before claiming completion.
 
 Authoring requires an explicit, authorized choice for a narrowly scoped missing
 capability. It is not an automatic fallback or a replacement for native tools,
@@ -168,6 +198,13 @@ follow normal tool approval. Review authored commands and files before reuse.
 Artifacts use the same `files`/`command` format for any installed runtime,
 including Python, Node, or compiled programs. For example, include `main.js`
 and set the manifest command to `["node", "{artifact_dir}/main.js"]`.
+Commands are exec argument vectors, never implicitly split or interpreted by a
+shell. Keep the executable and arguments separate; an executable path containing
+spaces stays in one entry. Loading does not require the runtime to be installed.
+Launch failures identify the actual executable and distinguish unavailable working
+directories, unavailable executables, permissions, and other launch errors. Once
+launched, script failures retain stderr and exit codes; they are not retried or
+repaired automatically.
 The command runs in the target project, reads one JSON object from stdin, and
 writes its result to stdout; stderr supplies diagnostics. Simple relative
 arguments naming bundled files, such as `main.js`, resolve to the artifact

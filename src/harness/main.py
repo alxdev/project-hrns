@@ -212,6 +212,12 @@ async def main(argv: list[str] | None = None) -> int:
     )
     context = ToolContext(config.working_directory)
 
+    async def approve_artifact_replacement(tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
+        if config.non_interactive or input_adapter is None or output is None:
+            return False
+        with output.suspend():
+            return await input_adapter.approve(tool, arguments)
+
     def create_subagent(profile: SubagentProfile) -> Agent:
         subagent_provider = (
             build_provider_for_choice(current_choice)
@@ -266,6 +272,8 @@ async def main(argv: list[str] | None = None) -> int:
             emit_log=emit_log,
             artifact_root=artifact_root,
             tool_catalog=tool_catalog,
+            approve_artifact_replacement=approve_artifact_replacement,
+            on_artifact_replaced=lambda tool: subagents.refresh_artifact_access(tool),
         )
         return Agent(
             provider=subagent_provider,
@@ -281,8 +289,18 @@ async def main(argv: list[str] | None = None) -> int:
             quiet=True,
         )
 
+    def report_unavailable(message: str) -> None:
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+
     subagents = SubagentManager(
-        create_subagent, profiles, events=events, tool_loader=mcp_manager.tools_for
+        create_subagent,
+        profiles,
+        events=events,
+        tool_loader=mcp_manager.tools_for,
+        report_unavailable=report_unavailable,
     )
     delegation_tools = [
         DelegationTool(profile.name, profile.description) for profile in profiles.values()

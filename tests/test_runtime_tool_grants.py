@@ -154,7 +154,9 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
         else:
             assert "unknown tool" in tool_result.content
     restarted = load_profiles(path, ToolCatalog(load_tools(TOOLS), catalog.artifact_root))
-    assert (name in [t.definition.name for t in restarted["lab"].tools]) == saved
+    assigned = {t.definition.name for t in restarted["lab"].tools}
+    assigned.update(restarted["lab"].tool_artifacts)
+    assert (name in assigned) == saved
 
 
 async def test_concurrent_saves_merge_and_cached_agent_syncs(tmp_path):
