@@ -9,7 +9,7 @@
         "tool_authoring"
       ],
       "tool_artifacts": [
-        "lab_text_metrics_v1"
+        "textmetrics"
       ],
       "skills": [
         "hello-workflow",
@@ -74,7 +74,7 @@
       ],
       "skills": [],
       "tool_artifacts": [
-        "lab_text_metrics_v1"
+        "textmetrics"
       ],
       "max_turns": 12,
       "permission_mode": "inherit",

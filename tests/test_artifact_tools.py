@@ -1,6 +1,8 @@
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -19,6 +21,17 @@ from harness.tools.registry import ToolRegistry
 TOOLS = Path(__file__).parents[1] / "tools.json"
 
 
+async def create(tool, context, arguments):
+    context = replace(
+        context,
+        approve_artifact_preparation=AsyncMock(return_value=True),
+        approve_artifact_creation=AsyncMock(return_value=True),
+    )
+    prepared = await tool.execute(context, {"name": arguments["name"]})
+    assert not prepared.is_error
+    return await tool.execute(context, arguments)
+
+
 def artifact_arguments():
     return {
         "name": "math_helper",
@@ -35,14 +48,14 @@ async def test_builder_artifact_is_requestable_by_another_agent_and_reloadable(t
     native = load_tools(TOOLS)
     catalog = ToolCatalog(native, tmp_path / "user" / "artifacts")
     builder = ToolRegistry([catalog["tool_authoring"]])
-    result = await builder.execute(
+    result = await create(
+        catalog["tool_authoring"],
         ToolContext(
             tmp_path,
             artifact_root=catalog.artifact_root,
             tool_registry=builder,
             tool_catalog=catalog,
         ),
-        "tool_authoring",
         artifact_arguments(),
     )
     assert not result.is_error
@@ -117,7 +130,7 @@ async def test_builder_artifact_is_requestable_by_another_agent_and_reloadable(t
 async def test_denied_artifact_request_does_not_grant_access(tmp_path):
     catalog = ToolCatalog(load_tools(TOOLS), tmp_path / "artifacts")
     context = ToolContext(tmp_path, artifact_root=catalog.artifact_root, tool_catalog=catalog)
-    await catalog["tool_authoring"].execute(context, artifact_arguments())
+    assert not (await create(catalog["tool_authoring"], context, artifact_arguments())).is_error
     provider = MockProvider(
         [
             ProviderResponse(
@@ -162,7 +175,7 @@ async def test_artifact_runs_in_project_with_artifact_and_skill_paths(tmp_path):
             '"skills":json.loads(os.environ["HARNESS_SKILL_DIRS"])}))\n'
         )
     }
-    result = await catalog["tool_authoring"].execute(context, arguments)
+    result = await create(catalog["tool_authoring"], context, arguments)
     assert not result.is_error
 
     output = json.loads((await catalog["math_helper"].execute(context, {})).content)
@@ -181,7 +194,7 @@ async def test_non_python_script_can_use_explicit_artifact_path(tmp_path):
     arguments["command"] = ["sh", "{artifact_dir}/run.sh"]
     context = ToolContext(tmp_path, artifact_root=catalog.artifact_root)
 
-    assert not (await catalog["tool_authoring"].execute(context, arguments)).is_error
+    assert not (await create(catalog["tool_authoring"], context, arguments)).is_error
     result = await catalog["math_helper"].execute(context, {})
 
     assert not result.is_error
@@ -239,7 +252,7 @@ async def test_authoring_persists_profile_access_only_with_separate_approval(tmp
         ),
     )
 
-    result = await catalog["tool_authoring"].execute(context, artifact_arguments())
+    result = await create(catalog["tool_authoring"], context, artifact_arguments())
 
     assert not result.is_error
     assert "math_helper" in catalog
@@ -254,7 +267,7 @@ async def test_inline_command_arguments_are_not_required_to_be_paths(tmp_path):
     arguments["command"] = [sys.executable, "-c", "# " + "inline " * 1000 + '\nprint("ok")']
     context = ToolContext(tmp_path, artifact_root=catalog.artifact_root)
 
-    assert not (await catalog["tool_authoring"].execute(context, arguments)).is_error
+    assert not (await create(catalog["tool_authoring"], context, arguments)).is_error
     result = await catalog["math_helper"].execute(context, {})
 
     assert not result.is_error
@@ -273,7 +286,7 @@ async def test_authoring_rejects_installed_names_without_replacement(tmp_path, k
     )
     arguments = artifact_arguments()
     if kind == "artifact":
-        assert not (await catalog["tool_authoring"].execute(context, arguments)).is_error
+        assert not (await create(catalog["tool_authoring"], context, arguments)).is_error
         directory = catalog.artifact_root / "math_helper"
         before = {path.name: path.read_bytes() for path in directory.iterdir()}
     else:
@@ -285,7 +298,7 @@ async def test_authoring_rejects_installed_names_without_replacement(tmp_path, k
 
     result = await catalog["tool_authoring"].execute(context, arguments)
 
-    assert result.is_error
+    assert not result.is_error
     assert json.loads(result.content)["status"] == "already_installed"
     assert catalog[name] == installed
     assert registry.get(name) is registered

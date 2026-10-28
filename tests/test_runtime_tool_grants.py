@@ -3,6 +3,7 @@ import json
 import sys
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -18,6 +19,17 @@ from harness.tools.loader import load_tools
 from harness.tools.registry import ToolRegistry
 
 TOOLS = Path(__file__).parents[1] / "tools.json"
+
+
+async def create(catalog, context, arguments):
+    context = replace(
+        context,
+        approve_artifact_preparation=AsyncMock(return_value=True),
+        approve_artifact_creation=AsyncMock(return_value=True),
+    )
+    tool = catalog["tool_authoring"]
+    assert not (await tool.execute(context, {"name": arguments["name"]})).is_error
+    return await tool.execute(context, arguments)
 
 
 def setup_profiles(tmp_path, catalog, reuse=False):
@@ -47,7 +59,8 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
         "command": [sys.executable, "run.py"],
     }
     if kind == "artifact_request":
-        result = await catalog["tool_authoring"].execute(
+        result = await create(
+            catalog,
             ToolContext(tmp_path, artifact_root=catalog.artifact_root, tool_catalog=catalog),
             artifact_args,
         )
@@ -90,7 +103,16 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
         else:
             call = ToolCall("execute", name, {"command": "printf executed"})
         provider = MockProvider(
-            [
+            (
+                [
+                    ProviderResponse(
+                        [ToolCall("prepare", "tool_authoring", {"name": name})], "tool_use"
+                    )
+                ]
+                if first and kind == "artifact_authoring"
+                else []
+            )
+            + [
                 ProviderResponse([call], "tool_use"),
                 ProviderResponse([TextBlock("done")], "end_turn"),
             ]
@@ -103,6 +125,8 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
                 tmp_path,
                 artifact_root=catalog.artifact_root,
                 tool_catalog=catalog,
+                approve_artifact_preparation=AsyncMock(return_value=True),
+                approve_artifact_creation=AsyncMock(return_value=True),
                 persist_tool_access=make_profile_tool_access_persister(
                     path,
                     profile.name,
@@ -161,7 +185,8 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
 
 async def test_concurrent_saves_merge_and_cached_agent_syncs(tmp_path):
     catalog = ToolCatalog(load_tools(TOOLS), tmp_path / "artifacts")
-    result = await catalog["tool_authoring"].execute(
+    result = await create(
+        catalog,
         ToolContext(tmp_path, artifact_root=catalog.artifact_root, tool_catalog=catalog),
         {
             "name": "runtime_helper",

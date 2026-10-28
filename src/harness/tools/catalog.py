@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Iterator, Mapping
 from copy import deepcopy
 from pathlib import Path
@@ -11,6 +10,7 @@ from jsonschema.validators import validator_for
 from harness.api.types import ToolDefinition
 
 from .artifact_errors import InvalidArtifactError
+from .artifact_validation import is_valid_artifact_name
 from .artifacts import ArtifactTool
 from .base import Tool
 from .loader import load_artifact_tool
@@ -66,7 +66,7 @@ class ToolCatalog(Mapping[str, Tool]):
         name = tool.definition.name
         if (
             name in self._native
-            or not re.fullmatch(r"[a-z][a-z0-9_]*", name)
+            or not is_valid_artifact_name(name)
             or tool.directory != self.artifact_root / name
         ):
             raise ValueError("validated artifact must belong to this catalog's artifact storage")
@@ -93,7 +93,7 @@ class ToolCatalog(Mapping[str, Tool]):
             if error is not None:
                 raise error
             return tool
-        if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+        if not is_valid_artifact_name(name):
             raise KeyError(name)
         signature = self._signature(name)
         cached = self._artifacts.get(name)
@@ -117,7 +117,7 @@ class ToolCatalog(Mapping[str, Tool]):
             names.update(
                 path.name
                 for path in self.artifact_root.iterdir()
-                if re.fullmatch(r"[a-z][a-z0-9_]*", path.name)
+                if is_valid_artifact_name(path.name)
             )
         return iter(sorted(names))
 

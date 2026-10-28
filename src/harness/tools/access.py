@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -13,10 +13,37 @@ from harness.api.types import ToolDefinition
 
 from .artifacts import ArtifactTool
 from .base import Tool
+from .handlers import tool_authoring
+from .loader import ConfiguredTool
 
 ToolApproval = Callable[[ToolDefinition, dict[str, Any]], Awaitable[bool]]
 ErrorReporter = Callable[[str], None]
 _locks: WeakKeyDictionary[asyncio.AbstractEventLoop, dict[Path, asyncio.Lock]] = WeakKeyDictionary()
+
+
+def make_tool_execution_approver(
+    approve: ToolApproval,
+    tools: Iterable[Tool],
+) -> ToolApproval:
+    """Let trusted native authoring ask only after its read-only installed checks.
+
+    This wraps only the interactive callback, never a permission policy. The
+    handler still denies replacement when dedicated consent is unavailable.
+    """
+    authoring_definitions = tuple(
+        tool.definition
+        for tool in tools
+        if type(tool) is ConfiguredTool and tool.handler is tool_authoring.execute
+    )
+
+    async def ask(tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
+        if isinstance(arguments, dict) and any(
+            tool is definition for definition in authoring_definitions
+        ):
+            return True
+        return await approve(tool, arguments)
+
+    return ask
 
 
 def _read_profile(path: Path, profile_name: str) -> tuple[dict[str, Any], dict[str, Any]] | None:

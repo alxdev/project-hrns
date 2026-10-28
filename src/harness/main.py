@@ -34,7 +34,7 @@ from harness.subagents import (
     load_profiles,
 )
 from harness.subagents.instructions import assemble_system_prompt
-from harness.tools.access import make_profile_tool_access_persister
+from harness.tools.access import make_profile_tool_access_persister, make_tool_execution_approver
 from harness.tools.base import ToolContext
 from harness.tools.catalog import ToolCatalog
 from harness.tools.loader import load_tools
@@ -173,6 +173,8 @@ async def main(argv: list[str] | None = None) -> int:
         return 2
     artifact_root = config.data_directory / "tool-artifacts"
     tool_catalog = ToolCatalog(base_tools, artifact_root)
+    if not config.non_interactive:
+        permissions = AlwaysAsk(make_tool_execution_approver(approve_tool, base_tools))
     try:
         profiles = load_profiles(config.working_directory / "subagents.json", tool_catalog)
     except ValueError as exc:
@@ -235,6 +237,28 @@ async def main(argv: list[str] | None = None) -> int:
         }.get(profile.permission_mode, permissions)
         registry = ToolRegistry(profile.tools)
 
+        async def approve_artifact_preparation(
+            tool: ToolDefinition, arguments: dict[str, Any]
+        ) -> bool:
+            if profile.permission_mode == "auto_allow":
+                return True
+            if config.non_interactive or input_adapter is None or output is None:
+                return False
+            with output.suspend():
+                return await input_adapter.approve(tool, arguments)
+
+        async def approve_artifact_creation(
+            tool: ToolDefinition, arguments: dict[str, Any]
+        ) -> bool:
+            if profile.permission_mode == "auto_allow":
+                return True
+            if config.non_interactive:
+                return config.allow_tools
+            if input_adapter is None or output is None:
+                return False
+            with output.suspend():
+                return await input_adapter.approve(tool, arguments)
+
         async def emit_log(tool_name: str, text: str, stream: str) -> None:
             await events.emit(
                 ToolLogEvent(
@@ -273,7 +297,11 @@ async def main(argv: list[str] | None = None) -> int:
             artifact_root=artifact_root,
             tool_catalog=tool_catalog,
             approve_artifact_replacement=approve_artifact_replacement,
+            approve_artifact_creation=approve_artifact_creation,
             on_artifact_replaced=lambda tool: subagents.refresh_artifact_access(tool),
+            archived_artifacts={},
+            approve_artifact_preparation=approve_artifact_preparation,
+            artifact_authoring_intents=set(),
         )
         return Agent(
             provider=subagent_provider,

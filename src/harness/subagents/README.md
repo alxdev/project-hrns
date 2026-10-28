@@ -115,9 +115,16 @@ callback; an explicit `request_tool` removes an active artifact that is now inva
 or missing instead of reporting it available.
 When an invalid artifact is encountered, it is reported as unavailable; the profile
 keeps its assignment, other tools remain usable, and `subagents.json` is unchanged.
-Repair the artifact or use `tool_authoring` to recreate it. Replacing an invalid
-artifact requires a separate interactive approval to archive the existing
-directory and install the replacement; non-interactive runs cannot approve it.
+Repair the artifact or use `tool_authoring` to recreate it. First send only
+`{"name": "tool_name", "replace_invalid": true}`. This is an archive/recreation
+request, not a creation attempt. The harness explains the invalid reason and
+requires explicit interactive consent before replacement code is prepared;
+non-interactive runs cannot approve it. Approval immediately archives the original
+in `INVALID_tool_name` (with a unique suffix if needed) and returns without creating.
+Only then prepare and submit a complete ordinary creation proposal with
+`replace_invalid=false`. Installation follows normal creation approval, and execution
+is separately approved. Full replacement definitions in the first call are rejected
+before the consent callback. Discovery and access requests never archive tools.
 Successful replacement refreshes assigned profiles and existing session access,
 including active and cached agents. It does not grant access to other profiles or
 bypass execution permissions. Saving a new assignment still requires the usual
@@ -167,13 +174,32 @@ actions require approval, and Gmail MCP tools are scoped only to this profile.
 
 ## Artifact authoring
 
+Every creation starts with `{"name": "tool_name"}` before generating a definition or
+files. Missing tools require explicit preparation consent; `preparation_authorized`
+allows a full proposal in that session, working directory, and artifact root only.
+Preparation approval names the artifact root and working directory; the harness
+rechecks the target and root after consent before recording intent.
+Installation always requires its own approval callback, including explicit grants
+from configured auto-allow policies; an absent callback denies installation.
+Preparation has no write or
+execution authority. Missing preparation callbacks deny access, including noninteractive
+sessions without an explicitly configured auto-allow policy. Invalid artifacts use
+the dedicated name-only archive/recreation gate described above, even with auto-allow.
+Definition validation failures retain pending intent for correction; installation denial,
+cancellation, other failures, committed installation, or observing an installed tool
+clear it. Each corrected proposal still follows normal installation approval.
+
 An authorized subagent with `tool_authoring` can create a reusable command-backed
 tool under `~/.<harness-name>/tool-artifacts/<tool-name>/`, containing
 `manifest.json` and supporting files. Existing artifacts are protected except for
 explicitly approved recreation of invalid artifacts as described above. If
 installation fails after archival, the original remains at the reported archive
 path; there is no automatic rollback. Approval archives the original before
-replacement validation, so validation failures also leave it archived. Concurrent
+replacement preparation and validation, so creation failures also leave it archived.
+Calls targeting installed valid/native tools return `already_installed` after read-only
+checks, without a creation attempt or authoring prompt. The call may still appear in
+the transcript; it does not mean creation was attempted. Permission denials still apply.
+Concurrent
 operations on the same artifact from independent processes are unsupported;
 filesystem preservation assumes a single writer. Creation does not modify the harness
 installation or target project. The artifact is validated and registered for the

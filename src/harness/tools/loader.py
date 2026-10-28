@@ -12,7 +12,7 @@ from typing import Any, cast
 from harness.api.types import ToolDefinition, ToolResult
 
 from .artifact_errors import InvalidArtifactError
-from .artifact_validation import validate_artifact_definition
+from .artifact_validation import is_valid_artifact_name, validate_artifact_definition
 from .artifacts import ArtifactTool
 from .base import Tool, ToolContext
 
@@ -48,8 +48,11 @@ def load_tools(path: Path) -> list[Tool]:
 
 def load_artifact_tool(artifact_root: Path, name: str) -> ArtifactTool:
     """Validate an artifact manifest without executing its command or files."""
-    if not _HANDLER_NAME.fullmatch(name):
-        raise ValueError("tool artifact names must be simple module names")
+    if not is_valid_artifact_name(name):
+        raise ValueError(
+            "tool artifact names must start with a lowercase letter and contain only lowercase "
+            "letters, digits, underscores, or hyphens; Windows reserved names are not allowed"
+        )
     root = artifact_root.resolve() / name
     try:
         root_info = root.lstat()

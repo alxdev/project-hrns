@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -165,8 +166,10 @@ async def test_startup_skips_only_invalid_artifacts(
 
 
 @pytest.mark.parametrize("interactive,approved", [(False, False), (True, False), (True, True)])
+@pytest.mark.parametrize("permission_mode", ["ask", "inherit", "auto_allow"])
+@pytest.mark.parametrize("allow_tools", [False, True])
 async def test_main_replacement_callback_uses_explicit_suspended_approval(
-    tmp_path, monkeypatch, interactive, approved
+    tmp_path, monkeypatch, interactive, approved, permission_mode, allow_tools
 ):
     import harness.main as main_module
     import harness.ui.interactive as interactive_module
@@ -182,7 +185,7 @@ async def test_main_replacement_callback_uses_explicit_suspended_approval(
                     "lab": {
                         "description": "Test",
                         "system_prompt": "Test",
-                        "permission_mode": "auto_allow",
+                        "permission_mode": permission_mode,
                         "tools": ["tool_authoring"],
                         "tool_artifacts": ["helper"],
                     }
@@ -248,6 +251,32 @@ async def test_main_replacement_callback_uses_explicit_suspended_approval(
         assert bool(approvals) is interactive
         if interactive:
             assert approvals == [(definition, arguments)]
+        assert context.approve_artifact_creation is not None
+        create_definition = ToolDefinition("tool_authoring", "Install the prepared tool", {})
+        create_arguments = {"name": "fresh", "replace_invalid": False}
+        assert await context.approve_artifact_creation(create_definition, create_arguments) is (
+            permission_mode == "auto_allow" or (not interactive and allow_tools) or approved
+        )
+        if interactive and permission_mode != "auto_allow":
+            assert approvals[-1] == (create_definition, create_arguments)
+        prepare_definition = ToolDefinition("prepare_artifact", "Prepare definition and files", {})
+        prepare_arguments = {"name": "fresh"}
+        assert await context.approve_artifact_preparation(
+            prepare_definition, prepare_arguments
+        ) is (permission_mode == "auto_allow" or approved)
+        if interactive and permission_mode != "auto_allow":
+            assert approvals[-1] == (prepare_definition, prepare_arguments)
+        prepared = await context.tool_catalog["tool_authoring"].execute(context, {"name": "fresh"})
+        assert bool(context.artifact_authoring_intents) is (
+            permission_mode == "auto_allow" or approved
+        )
+        assert prepared.is_error is not (permission_mode == "auto_allow" or approved)
+        # A fresh session, including another profile derived with replace, never inherits intent.
+        fresh = manager.factory(manager.profiles["lab"])
+        other = manager.factory(replace(manager.profiles["lab"], name="other"))
+        assert not fresh.context.artifact_authoring_intents
+        assert not other.context.artifact_authoring_intents
+        assert fresh.context.artifact_authoring_intents is not context.artifact_authoring_intents
         # Approval alone must not refresh a profile. The installer owns the success callback.
         assert manager.profiles["lab"].unavailable_artifacts == {}
         assert context.on_artifact_replaced is not None
@@ -269,7 +298,9 @@ async def test_main_replacement_callback_uses_explicit_suspended_approval(
     monkeypatch.setattr(interactive_module.InteractiveRunner, "run", run)
     argv = ["--working-dir", str(tmp_path)]
     if not interactive:
-        argv += ["--prompt", "Recreate", "--allow-tools"]
+        argv += ["--prompt", "Recreate"]
+        if allow_tools:
+            argv += ["--allow-tools"]
     assert await main_module.main(argv) == 0
 
 
@@ -356,38 +387,43 @@ async def test_real_recreation_recovers_startup_assignment_in_same_process(
         tool_catalog=catalog,
         tool_registry=ToolRegistry(),
         approve_artifact_replacement=approve_replacement,
+        approve_artifact_creation=AsyncMock(return_value=True),
         on_artifact_replaced=installed,
     )
     result = await catalog["tool_authoring"].execute(
-        context,
-        {
-            "name": "helper",
-            "replace_invalid": True,
-            "description": "Count lines and words",
-            "input_schema": {
-                "type": "object",
-                "properties": {"text": {"type": "string"}},
-                "required": ["text"],
-            },
-            "command": [sys.executable, "run.py"],
-            "files": {
-                "run.py": (
-                    "import json, pathlib, sys\n"
-                    "text = json.load(sys.stdin)['text']\n"
-                    "pathlib.Path('executed').write_text('yes')\n"
-                    "print(json.dumps({'line_count': len(text.splitlines()), "
-                    "'word_count': len(text.split())}))\n"
-                )
-            },
-        },
+        context, {"name": "helper", "replace_invalid": True}
     )
+    if replacement_approved:
+        result = await catalog["tool_authoring"].execute(
+            context,
+            {
+                "name": "helper",
+                "replace_invalid": False,
+                "description": "Count lines and words",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                },
+                "command": [sys.executable, "run.py"],
+                "files": {
+                    "run.py": (
+                        "import json, pathlib, sys\n"
+                        "text = json.load(sys.stdin)['text']\n"
+                        "pathlib.Path('executed').write_text('yes')\n"
+                        "print(json.dumps({'line_count': len(text.splitlines()), "
+                        "'word_count': len(text.split())}))\n"
+                    )
+                },
+            },
+        )
     payload = json.loads(result.content)
     assert len(approvals) == 1
     assert bool(refreshed) is replacement_approved, payload
     assert not (tmp_path / "executed").exists()  # Authoring does not execute the artifact.
     assert path.read_bytes() == original_profile
     if replacement_approved:
-        assert not result.is_error and payload["status"] == "recreated"
+        assert not result.is_error and payload["status"] == "created"
         archive = Path(payload["archive_path"])
         assert (archive / "manifest.json").read_bytes() == original_manifest
         assert (archive / "original.txt").read_text() == "Keep original"

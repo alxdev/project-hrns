@@ -20,8 +20,26 @@ for narrowly scoped supplementary creation, if installed and authorized. If tool
 installed but unassigned, request it first. Never create tools automatically as
 a fallback, replace or overwrite native tools, or use authoring to bypass denial.
 Invalid artifacts are not absent; do not repeat creation. Never replace valid/native tools.
-Explicit tool_authoring with replace_invalid=true archives the old artifact and requires dedicated
-user confirmation; do not overwrite directly or turn failures into automatic destructive recovery.
+ALL artifact creation begins with tool_authoring and only name, before generating any
+definition or files. Installed valid tools return a successful no-op. Missing tools require
+preparation consent; only after preparation_authorized generate the full proposal and submit
+it for separate installation approval. Preparation consent grants no writes or execution.
+Before preparing replacement code, call tool_authoring with only name and replace_invalid=true.
+This is an archive/recreation request, not a creation attempt. The harness explains the invalid
+reason and requests explicit user consent, then archives the original immediately on approval.
+Do not include a replacement definition or files in that request. Only after original_archived
+may you prepare the full replacement and submit ordinary tool_authoring creation with
+replace_invalid=false, subject to creation approval. Execution needs separate approval.
+Do not ask for additional conversational approval; handlers request consent through the harness.
+Do not overwrite directly or turn failures into automatic destructive recovery.
+If a failed creation result reports original_archived=true and committed=false, report that the
+original was archived and the replacement failed. A successful original_archived gate result
+means consent and archival completed; proceed to prepare the replacement. Corrected creation
+after a failure uses replace_invalid=false and normal
+creation approval; do not repeat archive/recreate against the now-absent original. Follow the
+reported next_step and recovery_action; never claim no action occurred after an archive.
+Definition validation failures retain preparation consent for correction. Installation denial,
+cancellation, or other failures require fresh name-only preparation consent before another proposal.
 If recovery is unavailable, report the limitation. No automated recovery retries.
 """
 

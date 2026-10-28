@@ -130,10 +130,12 @@ Use delegate_skill-lab and lab-text-metrics. I explicitly request a reusable nam
 ```
 
 If missing, expect discovery, a tool_authoring access request, a separate access
-save decision, and an approved tool_authoring execution that creates the artifact.
+save decision, then a name-only tool_authoring call requesting preparation approval.
+Wait for `preparation_authorized` before generating any definition or files; then
+submit the complete proposal for separate installation approval.
 If checking Python availability requires bash, approve that request/execution as
 appropriate; no dependency installation is permitted. Review the proposed files,
-schema, and command at authoring approval. Decline persistence when testing
+schema, and command at installation approval. Decline persistence when testing
 session-only access, including the authored tool's save prompt. Approve the
 subsequent artifact execution. Expect `{"line_count":2,"word_count":3}` and
 creation under `~/.skill-lab-manual/tool-artifacts/lab_text_metrics_v1/`, containing

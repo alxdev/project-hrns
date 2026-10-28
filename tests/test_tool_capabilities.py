@@ -1,20 +1,72 @@
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
 from harness.agent import Agent
 from harness.agent.loop import ToolExecutionEvent
 from harness.api.types import ProviderResponse, TextBlock, ToolCall, ToolDefinition, ToolResult
-from harness.permissions import AlwaysDeny, PermissionDecision
+from harness.permissions import AlwaysAsk, AlwaysDeny, PermissionDecision
 from harness.provider import MockProvider
+from harness.tools.access import make_tool_execution_approver
+from harness.tools.artifacts import ArtifactTool
 from harness.tools.base import ToolContext
 from harness.tools.catalog import ToolCatalog
 from harness.tools.loader import load_tools
 from harness.tools.registry import ToolRegistry
 
 TOOLS_PATH = Path(__file__).parents[1] / "tools.json"
+
+
+@pytest.mark.parametrize("replacement", [None, False, "true", 1, {}, []])
+async def test_execution_approver_defers_native_authoring_checks_to_handler(replacement):
+    tool = next(t for t in load_tools(TOOLS_PATH) if t.definition.name == "tool_authoring")
+    approve = AsyncMock(return_value=False)
+    ask = make_tool_execution_approver(approve, [tool])
+    arguments = {} if replacement is None else {"replace_invalid": replacement}
+    assert await ask(tool.definition, arguments)
+    approve.assert_not_awaited()
+
+
+@pytest.mark.parametrize("kind", ["artifact", "native_other_handler", "copied_definition"])
+async def test_execution_approver_cannot_defer_by_name_or_model_metadata(tmp_path, kind):
+    tools = load_tools(TOOLS_PATH)
+    native = next(t for t in tools if t.definition.name == "tool_authoring")
+    if kind == "artifact":
+        offered = ArtifactTool(native.definition, tmp_path, ("runtime",))
+    elif kind == "native_other_handler":
+        other = next(t for t in tools if t.definition.name == "read_file")
+        offered = replace(other, definition=native.definition)
+    else:
+        offered = native
+    definition = replace(offered.definition) if kind == "copied_definition" else offered.definition
+    approve = AsyncMock(return_value=False)
+    ask = make_tool_execution_approver(approve, [offered])
+    arguments = {"replace_invalid": True, "requests_consent": True}
+    assert not await ask(definition, arguments)
+    approve.assert_awaited_once_with(definition, arguments)
+
+
+@pytest.mark.parametrize("arguments", [None, [], "invalid", 1, True])
+async def test_nonobject_authoring_arguments_still_return_a_tool_result(tmp_path, arguments):
+    tool = next(t for t in load_tools(TOOLS_PATH) if t.definition.name == "tool_authoring")
+    approve = AsyncMock(return_value=True)
+    policy = AlwaysAsk(make_tool_execution_approver(approve, [tool]))
+    provider = MockProvider(
+        [
+            ProviderResponse([ToolCall("malformed", "tool_authoring", arguments)], "tool_use"),
+            ProviderResponse([TextBlock("Reported malformed arguments")], "end_turn"),
+        ]
+    )
+    agent = Agent(provider, ToolRegistry([tool]), policy, ToolContext(tmp_path))
+    assert await agent.send("Create") == "Reported malformed arguments"
+    approve.assert_awaited_once_with(tool.definition, arguments)
+    result = provider.calls[-1][0][-1].content[0]
+    assert result.tool_use_id == "malformed"
+    assert result.is_error
 
 
 class AllowAll:
@@ -66,6 +118,12 @@ async def test_tool_authoring_creates_and_activates_user_artifact(tmp_path, monk
     )
     registry = ToolRegistry()
     context = ToolContext(tmp_path, artifact_root=tmp_path / "artifacts", tool_registry=registry)
+    context = replace(
+        context,
+        approve_artifact_preparation=AsyncMock(return_value=True),
+        approve_artifact_creation=AsyncMock(return_value=True),
+    )
+    assert not (await tool_authoring.execute(context, {"name": "math_helper"})).is_error
 
     def forbidden(*args, **kwargs):
         pytest.fail("initial authoring must not execute commands")

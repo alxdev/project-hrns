@@ -2,11 +2,40 @@
 
 from __future__ import annotations
 
+import re
 import warnings
 from typing import Any
 
 from jsonschema.exceptions import SchemaError
 from jsonschema.validators import validator_for
+
+_ARTIFACT_NAME = re.compile(r"[a-z][a-z0-9_-]*")
+_RESERVED = {
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+}
+
+
+def portable_component(part: str) -> bool:
+    return (
+        bool(part)
+        and part not in (".", "..")
+        and not part.endswith((".", " "))
+        and not any(c in '<>:"/\\|?*' or ord(c) < 32 for c in part)
+        and part.split(".")[0].casefold() not in _RESERVED
+    )
+
+
+def is_valid_artifact_name(name: object) -> bool:
+    return (
+        isinstance(name, str)
+        and _ARTIFACT_NAME.fullmatch(name) is not None
+        and portable_component(name)
+    )
 
 
 def validate_artifact_definition(description: Any, input_schema: Any, command: Any) -> None:

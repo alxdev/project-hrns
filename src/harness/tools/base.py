@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from stat import S_ISLNK, S_ISREG
 from typing import TYPE_CHECKING, Any, Protocol
@@ -31,6 +31,16 @@ class ToolContext:
         Callable[[ToolDefinition, dict[str, Any]], Awaitable[bool]] | None
     ) = None
     on_artifact_replaced: Callable[[Tool], None] | None = None
+    approve_artifact_creation: (
+        Callable[[ToolDefinition, dict[str, Any]], Awaitable[bool]] | None
+    ) = None
+    approve_artifact_preparation: (
+        Callable[[ToolDefinition, dict[str, Any]], Awaitable[bool]] | None
+    ) = None
+    # Session state, shared by replace(context, tool_name=...), never model input.
+    artifact_authoring_intents: set[tuple[Path, Path, str]] = field(default_factory=set)
+    # Diagnostics only: an archive is not permission to create or execute a tool.
+    archived_artifacts: dict[str, str] = field(default_factory=dict)
 
 
 def resolve_read_path(context: ToolContext, value: str, *, skill: str | None = None) -> Path:

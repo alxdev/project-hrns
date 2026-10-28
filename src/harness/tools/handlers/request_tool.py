@@ -6,6 +6,7 @@ from harness.api.types import ToolResult
 from harness.tools.artifact_errors import InvalidArtifactError
 from harness.tools.artifacts import ArtifactTool
 from harness.tools.base import ToolContext
+from harness.tools.handlers.tool_authoring import _invalid
 from harness.tools.results import capability_result
 
 
@@ -46,16 +47,7 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
     except InvalidArtifactError as exc:
         if isinstance(existing, ArtifactTool):
             registry.unregister(name)
-        return capability_result(
-            "existing_artifact_invalid",
-            str(exc),
-            "Use tool_authoring with replace_invalid=true and a complete replacement; "
-            "separate explicit user approval is required. Do not retry automatically.",
-            is_error=True,
-            name=exc.name,
-            path=str(exc.path),
-            reason=exc.reason,
-        )
+        return _invalid(exc)
     except (OSError, ValueError) as exc:
         return capability_result(
             "load_failed",

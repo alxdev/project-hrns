@@ -74,12 +74,12 @@
     },
     "tool_authoring": {
       "handler": "tool_authoring",
-      "description": "Create and activate a user-owned tool artifact that runs with an available command-line runtime.",
+      "description": "Create and activate a user-owned tool artifact. ALL creation starts with only name, before generating a definition or files. The harness checks installed tools and requests preparation consent for missing tools. Only after preparation_authorized submit the full proposal for separate installation approval. For an invalid existing artifact, first send only name and replace_invalid=true; archive/recreation consent authorizes replacement preparation. A full proposal cannot bypass either gate. The harness requests consent; do not ask for conversational approval.",
       "input_schema": {
         "type": "object",
         "properties": {
-          "name": {"type": "string", "description": "New tool name."},
-          "replace_invalid": {"type": "boolean", "default": false, "description": "Recreate an existing invalid artifact with a complete replacement and separate direct user confirmation. Preserves the original in an INVALID_ archive, including if installation then fails; no automatic rollback. Valid and native tools are protected."},
+          "name": {"type": "string", "description": "Artifact name: starts with a lowercase letter, followed by lowercase letters, digits, underscores, or hyphens. Windows reserved names are not allowed.", "pattern": "^[a-z][a-z0-9_-]*$"},
+          "replace_invalid": {"type": "boolean", "default": false, "description": "Archive/recreation request only: supply name and this flag alone. Requires explicit harness consent before replacement code is prepared. Approval immediately archives the invalid original in INVALID_name; returns without creating. Then use false with a complete definition for separately approved ordinary creation. No rollback; valid and native tools are protected."},
           "description": {"type": "string", "description": "Tool description."},
           "input_schema": {"type": "object", "description": "Valid JSON Schema for tool arguments with explicit root type object; define named inputs under properties and required as an array of property names."},
           "files": {
@@ -94,7 +94,7 @@
             "minItems": 1
           }
         },
-        "required": ["name", "description", "input_schema", "files", "command"],
+        "required": ["name"],
         "additionalProperties": false
       }
     }

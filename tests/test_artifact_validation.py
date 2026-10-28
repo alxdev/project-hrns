@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import warnings
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -23,6 +24,18 @@ from harness.tools.process import ProcessResult
 from harness.tools.registry import ToolRegistry
 
 TOOLS = Path(__file__).parents[1] / "tools.json"
+
+
+async def author(tool, context, proposal):
+    context = replace(
+        context,
+        approve_artifact_preparation=AsyncMock(return_value=True),
+        approve_artifact_creation=AsyncMock(return_value=True),
+    )
+    assert not (await tool.execute(context, {"name": proposal["name"]})).is_error
+    return await tool.execute(context, proposal)
+
+
 BAD_SCHEMAS = [
     {"text": "string"},
     {},
@@ -55,7 +68,8 @@ async def test_bad_schema_has_no_creation_registration_or_persistence(tmp_path, 
     persist = AsyncMock()
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        result = await catalog["tool_authoring"].execute(
+        result = await author(
+            catalog["tool_authoring"],
             ToolContext(
                 tmp_path,
                 artifact_root=catalog.artifact_root,
@@ -136,8 +150,10 @@ async def test_invalid_manifest_discovery_request_and_profile_fail_before_provid
 )
 async def test_bad_command_rejected_before_creation(tmp_path, command):
     catalog = ToolCatalog(load_tools(TOOLS), tmp_path / "artifacts")
-    result = await catalog["tool_authoring"].execute(
-        ToolContext(tmp_path, artifact_root=catalog.artifact_root), arguments(command=command)
+    result = await author(
+        catalog["tool_authoring"],
+        ToolContext(tmp_path, artifact_root=catalog.artifact_root),
+        arguments(command=command),
     )
     assert result.is_error
     assert json.loads(result.content)["status"] == "validation_error"
@@ -163,8 +179,10 @@ async def test_bad_command_rejected_before_creation(tmp_path, command):
 )
 async def test_valid_argv_creation_and_load_do_not_execute(tmp_path, command):
     catalog = ToolCatalog(load_tools(TOOLS), tmp_path / "artifacts")
-    result = await catalog["tool_authoring"].execute(
-        ToolContext(tmp_path, artifact_root=catalog.artifact_root), arguments(command=command)
+    result = await author(
+        catalog["tool_authoring"],
+        ToolContext(tmp_path, artifact_root=catalog.artifact_root),
+        arguments(command=command),
     )
     assert not result.is_error
     payload = json.loads(result.content)
@@ -213,8 +231,10 @@ async def test_validation_never_uses_network_or_executes_code(tmp_path, monkeypa
 
 async def create_tool(tmp_path, **overrides):
     catalog = ToolCatalog(load_tools(TOOLS), tmp_path / "artifacts")
-    result = await catalog["tool_authoring"].execute(
-        ToolContext(tmp_path, artifact_root=catalog.artifact_root), arguments(**overrides)
+    result = await author(
+        catalog["tool_authoring"],
+        ToolContext(tmp_path, artifact_root=catalog.artifact_root),
+        arguments(**overrides),
     )
     assert not result.is_error
     return catalog["helper"]

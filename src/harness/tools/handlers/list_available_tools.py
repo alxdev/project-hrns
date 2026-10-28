@@ -38,8 +38,10 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
                     "state": "invalid",
                     "path": str(exc.path),
                     "reason": exc.reason,
-                    "next_step": "Use tool_authoring with replace_invalid=true and a full "
-                    "replacement, subject to separate explicit user approval.",
+                    "next_step": "Only if this tool is needed and repair is authorized, call "
+                    "tool_authoring with only name and replace_invalid=true. The harness obtains "
+                    "archive/recreate consent before you prepare replacement code. Discovery "
+                    "does not repair artifacts.",
                 }
             )
             continue
