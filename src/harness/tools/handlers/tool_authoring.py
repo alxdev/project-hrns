@@ -61,6 +61,24 @@ def _already_installed(name: str) -> ToolResult:
     )
 
 
+def _missing_recreation_target(context: ToolContext, name: str) -> ToolResult:
+    return capability_result(
+        "not_installed",
+        "no existing invalid artifact to recreate",
+        "Do not repeat archive/recreate or retry automatically. If creation is still within "
+        "the authorized scope, call tool_authoring with only name (ordinary preparation; "
+        "replace_invalid=false) before preparing a proposal. The harness checks preparation "
+        "consent; this result grants no preparation, installation, or execution permission.",
+        is_error=True,
+        name=name,
+        recovery_action={
+            "tool": context.tool_name or "tool_authoring",
+            "name": name,
+            "replace_invalid": False,
+        },
+    )
+
+
 def _intent(context: ToolContext, name: str) -> tuple[Path, Path, str]:
     assert context.artifact_root is not None
     return (
@@ -73,6 +91,18 @@ def _intent(context: ToolContext, name: str) -> tuple[Path, Path, str]:
 def _installed(context: ToolContext, name: str) -> ToolResult:
     context.artifact_authoring_intents.discard(_intent(context, name))
     return _already_installed(name)
+
+
+def _preparation_authorized(name: str) -> ToolResult:
+    return capability_result(
+        "preparation_authorized",
+        f"Preparation authorized for tool {name!r} in this session.",
+        "Now generate and submit the complete definition and files using tool_authoring "
+        "with replace_invalid=false. Installation requires separate approval; "
+        "preparation approval grants no writes or execution.",
+        name=name,
+        committed=False,
+    )
 
 
 def _root_identity(root: Path) -> tuple[int, int] | None:
@@ -115,7 +145,7 @@ async def prepare_recreation(context: ToolContext, error: InvalidArtifactError) 
             except InvalidArtifactError as current:
                 error = current
             except KeyError:
-                return _failure("no existing invalid artifact to recreate", "not_installed")
+                return _missing_recreation_target(context, error.name)
             else:
                 return _installed(context, error.name)
             before = _target_definition(artifact)
@@ -226,7 +256,7 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
             return _failure(str(exc), "authoring_failed")
         if installed is not None:
             return _installed(context, name)
-        return _failure("no existing invalid artifact to recreate", "not_installed")
+        return _missing_recreation_target(context, name)
     async with artifact_lock(artifact):
         state: dict[str, Any] = {"committed": False, "installed": False}
         if name in context.archived_artifacts:
@@ -271,18 +301,17 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
                     "The original was archived and no replacement installation committed. "
                     "The archive remains preserved; no rollback was performed."
                 )
-                payload["next_step"] = (
-                    "Report the archived original and failure; do not retry automatically. "
-                    "For a separately authorized corrected proposal, use ordinary "
-                    "tool_authoring creation with "
-                    "replace_invalid=false, subject to normal creation approval. "
-                    "If the target is occupied, inspect it first; do not overwrite it or retry "
-                    "archive/recreate automatically."
-                )
-                if payload["status"] != "validation_error":
+                if payload["status"] == "validation_error":
                     payload["next_step"] += (
-                        " Before preparing another proposal, request fresh preparation consent "
+                        " The original archive remains preserved; do not archive/recreate again."
+                    )
+                else:
+                    payload["next_step"] = (
+                        "Report the archived original and failure; do not retry automatically. "
+                        "Before preparing another proposal, request fresh preparation consent "
                         "with only name (replace_invalid=false)."
+                        " If the target is occupied, inspect it first; do not overwrite it or "
+                        "retry archive/recreate automatically."
                     )
                 payload["recovery_action"] = {
                     "tool": context.tool_name or "tool_authoring",
@@ -347,7 +376,8 @@ async def _author(
 
     intent = _intent(context, name)
     if set(arguments) <= {"name", "replace_invalid"}:
-        context.artifact_authoring_intents.discard(intent)
+        if intent in context.artifact_authoring_intents:
+            return _preparation_authorized(name)
         root_identity = _root_identity(artifact.parent)
         details = {
             "name": name,
@@ -381,15 +411,7 @@ async def _author(
         if _root_identity(artifact.parent) != root_identity:
             return _failure("artifact root changed during approval", "target_changed")
         context.artifact_authoring_intents.add(intent)
-        return capability_result(
-            "preparation_authorized",
-            f"Preparation authorized for tool {name!r} in this session.",
-            "Now generate and submit the complete definition and files using tool_authoring "
-            "with replace_invalid=false. Installation requires separate approval; "
-            "preparation approval grants no writes or execution.",
-            name=name,
-            committed=False,
-        )
+        return _preparation_authorized(name)
     if intent not in context.artifact_authoring_intents:
         return _failure(
             "start with only name and obtain preparation consent "
@@ -397,31 +419,9 @@ async def _author(
             "preparation_required",
         )
 
-    # Policy has already allowed this native handler. Ask for creation only once
-    # the read-only checks establish an actual creation attempt, never for a no-op.
     approval = context.approve_artifact_creation
     if approval is None:
         return _failure("tool artifact creation approval unavailable", "approval_denied")
-    authoring = (
-        context.tool_registry.get(context.tool_name or "tool_authoring")
-        if context.tool_registry
-        else None
-    )
-    definition = (
-        authoring.definition
-        if authoring is not None
-        else ToolDefinition(
-            context.tool_name or "tool_authoring", "Create a user-owned tool artifact", {}
-        )
-    )
-    try:
-        approved = await approval(definition, deepcopy(arguments))
-    except BaseException:
-        context.artifact_authoring_intents.discard(intent)
-        raise
-    if not approved:
-        context.artifact_authoring_intents.discard(intent)
-        return _failure("tool artifact creation approval denied", "approval_denied")
 
     # Keep the proposal separate from callback arguments and caller-owned dictionaries.
     proposal = deepcopy(
@@ -451,8 +451,14 @@ async def _author(
                 raise ValueError("file paths must not overlap or alias")
             paths.add(parts)
     except ValueError as exc:
-        return _failure(
+        return capability_result(
+            "validation_error",
             str(exc),
+            "Correct in this same child invocation; preparation consent remains for the "
+            "same approved name/root/workspace. Resubmit with "
+            "replace_invalid=false for separate install approval. No conversational root "
+            "reauthorization, unchanged retries, scope expansion, or rearchival.",
+            is_error=True,
             path=str(artifact),
             execution_verified=False,
             **{key: value for key, value in state.items() if key != "staging"},
@@ -462,7 +468,37 @@ async def _author(
     assert isinstance(description, str)
     assert isinstance(schema, dict)
     assert isinstance(command, list)
+    # Only a complete validated proposal reaches installation approval. The same
+    # private values are staged below; approval callbacks receive a separate copy.
+    authoring = (
+        context.tool_registry.get(context.tool_name or "tool_authoring")
+        if context.tool_registry
+        else None
+    )
+    definition = (
+        authoring.definition
+        if authoring is not None
+        else ToolDefinition(
+            context.tool_name or "tool_authoring", "Create a user-owned tool artifact", {}
+        )
+    )
+    root_identity = _root_identity(root)
+    try:
+        approved = await approval(definition, deepcopy(arguments))
+    except BaseException:
+        context.artifact_authoring_intents.discard(intent)
+        raise
+    if not approved:
+        context.artifact_authoring_intents.discard(intent)
+        return _failure("tool artifact creation approval denied", "approval_denied")
+
+    # Approval awaited external input; recheck the destination before any writes.
     require_real_directory(root)
+    if _root_identity(root) != root_identity or _intent(context, name) != intent:
+        return _failure("artifact authoring scope changed during approval", "target_changed")
+    checked = _check_target(context, artifact)
+    if checked is not None:
+        return checked
     root.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".harness-stage-", dir=root))
     owned = OwnedStaging(staging)

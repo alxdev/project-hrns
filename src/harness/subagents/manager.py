@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from harness.agent import Agent
 from harness.agent.loop import EventSink, SubagentLifecycleEvent
+from harness.request_context import render_handoff
 from harness.tools.artifact_errors import InvalidArtifactError
 from harness.tools.artifacts import ArtifactTool
 from harness.tools.base import Tool
@@ -58,8 +59,6 @@ class SubagentManager:
         self.events = events
         self.tool_loader = tool_loader
         self.report_unavailable = report_unavailable
-        self._agents: dict[str, Agent] = {}
-        self._session_artifacts: dict[str, set[str]] = {}
         self._live_agents: dict[str, tuple[str, Agent]] = {}
         self._discovered_tools: dict[str, tuple[Tool, ...]] = {}
         self._records: list[SubagentRecord] = []
@@ -103,27 +102,13 @@ class SubagentManager:
             )
             if assigned:
                 self.grant_tool_access(profile_name, tool)
-            for agent in self._session_agents(profile_name):
-                if (
-                    assigned
-                    or isinstance(agent.tools.get(name), ArtifactTool)
-                    or (
-                        agent is self._agents.get(profile_name)
-                        and name in self._session_artifacts.get(profile_name, ())
-                    )
-                ):
+            for agent in self._active_agents(profile_name):
+                if assigned or isinstance(agent.tools.get(name), ArtifactTool):
                     agent.tools.unregister(name)
                     agent.tools.register(tool)
 
-    def _session_agents(self, profile_name: str) -> tuple[Agent, ...]:
-        agents = {}
-        cached = self._agents.get(profile_name)
-        if cached is not None:
-            agents[id(cached)] = cached
-        for name, agent in self._live_agents.values():
-            if name == profile_name:
-                agents[id(agent)] = agent
-        return tuple(agents.values())
+    def _active_agents(self, profile_name: str) -> tuple[Agent, ...]:
+        return tuple(agent for name, agent in self._live_agents.values() if name == profile_name)
 
     async def delegate(self, profile_name: str, prompt: str) -> SubagentRecord:
         profile = self.profiles.get(profile_name)
@@ -132,7 +117,11 @@ class SubagentManager:
             raise ValueError(f"unknown subagent '{profile_name}'; available: {available}")
         return await self._run_profile(profile, prompt)
 
-    async def _run_profile(self, profile: SubagentProfile, prompt: str) -> SubagentRecord:
+    async def _run_profile(
+        self,
+        profile: SubagentProfile,
+        prompt: str,
+    ) -> SubagentRecord:
         if not prompt.strip():
             raise ValueError("subagent prompt cannot be empty")
         if len(self.active()) >= self.max_active:
@@ -141,8 +130,9 @@ class SubagentManager:
         record = SubagentRecord(id=uuid4().hex[:8], profile=profile.name, prompt=prompt)
         self._records.append(record)
         started = time.monotonic()
-        await self._emit(SubagentLifecycleEvent(profile.name, record.id, "started"))
         try:
+            await self._emit(SubagentLifecycleEvent(profile.name, record.id, "started"))
+            notices: list[str] = []
             discovered_tools = await self.tool_loader(profile.name) if self.tool_loader else ()
             # A save may have completed while discovery was awaiting I/O.
             profile = self.profiles[profile.name]
@@ -155,46 +145,12 @@ class SubagentManager:
                 )
             effective_profile = replace(profile, tools=(*profile.tools, *discovered_tools))
 
-            if profile.reuse:
-                agent = self._agents.get(profile.name)
-                if agent is None:
-                    agent = self.factory(effective_profile)
-                    self._agents[profile.name] = agent
-                else:
-                    # Manifest changes must replace (or remove) old executable objects,
-                    # including session-only grants on a reused agent.
-                    if profile.tool_catalog is not None:
-                        session_names = self._session_artifacts.setdefault(profile.name, set())
-                        session_names.update(
-                            definition.name
-                            for definition in agent.tools.definitions()
-                            if isinstance(agent.tools.get(definition.name), ArtifactTool)
-                            and definition.name not in profile.tool_artifacts
-                        )
-                        artifact_names = session_names | set(profile.tool_artifacts)
-                        for name in artifact_names:
-                            agent.tools.unregister(name)
-                            try:
-                                agent.tools.register(profile.tool_catalog[name])
-                            except (KeyError, OSError, UnicodeError, ValueError) as exc:
-                                if name in session_names:
-                                    reason = f"Unavailable session tool artifact {name!r}: {exc}"
-                                    if self.report_unavailable is not None:
-                                        self.report_unavailable(reason)
-                                    prompt += f"\n\n{reason}"
-                    for tool in effective_profile.tools:
-                        if agent.tools.get(tool.definition.name) is not tool:
-                            agent.tools.unregister(tool.definition.name)
-                            agent.tools.register(tool)
-            else:
-                agent = self.factory(effective_profile)
+            agent = self.factory(effective_profile)
 
             self._live_agents[record.id] = (profile.name, agent)
             if profile.unavailable_artifacts:
-                prompt += "\n\nUnavailable assigned tool artifacts:\n" + "\n".join(
-                    profile.unavailable_artifacts.values()
-                )
-            record.result = await agent.send(prompt)
+                notices.extend(profile.unavailable_artifacts.values())
+            record.result = await agent.send(render_handoff(prompt, notices))
             record.status = SubagentStatus.COMPLETED
             return record
         except asyncio.CancelledError:
@@ -260,7 +216,7 @@ class SubagentManager:
         tools: dict[str, Tool] = {}
         for tool in (*profile.tools, *self._discovered_tools.get(profile_name, ())):
             tools.setdefault(tool.definition.name, tool)
-        for agent in self._session_agents(profile_name):
+        for agent in self._active_agents(profile_name):
             for definition in agent.tools.definitions():
                 session_tool = agent.tools.get(definition.name)
                 if session_tool is not None:
@@ -269,7 +225,11 @@ class SubagentManager:
 
     def unregister_tools(self, name_prefix: str) -> int:
         removed = 0
-        for agent in self._agents.values():
+        for profile_name, tools in self._discovered_tools.items():
+            self._discovered_tools[profile_name] = tuple(
+                tool for tool in tools if not tool.definition.name.startswith(name_prefix)
+            )
+        for _, agent in self._live_agents.values():
             for definition in agent.tools.definitions():
                 if definition.name.startswith(name_prefix):
                     removed += agent.tools.unregister(definition.name) is not None

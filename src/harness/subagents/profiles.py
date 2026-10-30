@@ -136,7 +136,6 @@ def _build_profile(
     max_turns = config.get("max_turns", 10)
     if isinstance(max_turns, bool) or not isinstance(max_turns, int) or max_turns < 1:
         raise ValueError(f"{path} profile {name!r} max_turns must be a positive integer")
-    reuse = _optional_bool(path, name, config, "reuse", False)
     requires_tools = _optional_bool(path, name, config, "requires_tools", False)
     return SubagentProfile(
         name=name,
@@ -146,7 +145,6 @@ def _build_profile(
         skills=skill_names,
         max_turns=max_turns,
         permission_mode=permission_mode,
-        reuse=reuse,
         requires_tools=requires_tools,
         tool_artifacts=tuple(fields["tool_artifacts"]),
         unavailable_artifacts=unavailable_artifacts,

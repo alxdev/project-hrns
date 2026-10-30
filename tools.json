@@ -89,7 +89,7 @@
           },
           "command": {
             "type": "array",
-            "description": "Exec argv array, not shell text: keep executable and each argument separate, e.g. [\"python3\", \"{artifact_dir}/main.py\"]. Paths with spaces remain a single entry. Creation validates the definition without executing or verifying behavior. Run approved representative input and compare the requested result before claiming completion. Runs in the target project; use {artifact_dir} for bundled files and {workspace_dir} for the project. JSON arguments arrive on stdin. HARNESS_SKILL_DIRS contains allowed skill paths as JSON.",
+            "description": "Exec argv array, not shell text: keep executable and each argument separate, e.g. [\"python3\", \"{artifact_dir}/main.py\"]. Paths with spaces remain a single entry. The command runs as a subprocess. The harness serializes arguments as JSON on stdin; the program must read them, invoke its logic, and emit the needed result on stdout in the format requested by the task (not necessarily JSON). Defining a handler or returning a value alone neither invokes it nor prints its result; the harness does not invoke handlers automatically. Send diagnostics to stderr. Creation statically validates the definition without executing or proving correctness. Actual execution requires separate approval; compare observed output with the task before claiming completion. Empty stdout is not evidence that expected metrics or other results exist. Runs in the target project; use {artifact_dir} for bundled files and {workspace_dir} for the project. HARNESS_SKILL_DIRS contains allowed skill paths as JSON.",
             "items": {"type": "string"},
             "minItems": 1
           }

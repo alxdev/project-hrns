@@ -9,7 +9,9 @@
         "tool_authoring"
       ],
       "tool_artifacts": [
-        "textmetrics"
+        "textmetrics",
+        "text-metrics",
+        "lab_text_metrics_v1"
       ],
       "skills": [
         "hello-workflow",
@@ -19,7 +21,6 @@
       ],
       "max_turns": 30,
       "permission_mode": "inherit",
-      "reuse": false,
       "requires_tools": false
     },
     "explorer": {
@@ -34,7 +35,6 @@
       ],
       "max_turns": 10,
       "permission_mode": "inherit",
-      "reuse": false,
       "requires_tools": false
     },
     "coder": {
@@ -51,7 +51,6 @@
       ],
       "max_turns": 20,
       "permission_mode": "inherit",
-      "reuse": false,
       "requires_tools": false
     },
     "gmail": {
@@ -61,24 +60,6 @@
       "tool_artifacts": [],
       "max_turns": 10,
       "permission_mode": "inherit",
-      "reuse": false,
-      "requires_tools": true
-    },
-    "tool-builder": {
-      "description": "Create a user-owned tool artifact after the user approves the proposed capability.",
-      "system_prompt": "You are a tool-authoring subagent. Create only narrowly scoped tools requested by the user. Never overwrite existing artifacts and clearly report what was created.",
-      "tools": [
-        "read_file",
-        "write_file",
-        "tool_authoring"
-      ],
-      "skills": [],
-      "tool_artifacts": [
-        "textmetrics"
-      ],
-      "max_turns": 12,
-      "permission_mode": "inherit",
-      "reuse": false,
       "requires_tools": true
     }
   }

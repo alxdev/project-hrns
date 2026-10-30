@@ -58,7 +58,9 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
     if tool is None:
         if isinstance(existing, ArtifactTool):
             registry.unregister(name)
-        next_step = "Report the missing capability; do not create a tool automatically."
+        next_step = (
+            "Report the missing capability as a blocker; do not create a tool automatically."
+        )
         try:
             authoring = context.tool_catalog.get("tool_authoring")
         except (OSError, ValueError):
@@ -69,8 +71,12 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
                 if registry.get("tool_authoring") is not None
                 else f"{context.tool_name or 'request_tool'} for tool_authoring"
             )
-            next_step += (
-                f" Only for explicit, authorized, narrowly scoped supplementary creation, {action}."
+            next_step = (
+                "Only if the user explicitly requested reusable tool creation and it is within "
+                "your assigned scope, "
+                f"{action} and follow its harness consent steps to continue the assigned task. "
+                "Otherwise report the missing capability as a blocker; do not create a tool "
+                "automatically or substitute an explicitly required named tool."
             )
         return capability_result(
             "not_installed",
@@ -95,7 +101,6 @@ async def execute(context: ToolContext, arguments: dict[str, Any]) -> ToolResult
     persistence_note = " It was also saved to the subagent profile." if persisted else ""
     return capability_result(
         "enabled",
-        f"tool {name!r} is now available for this subagent session. "
-        f"Retry the operation.{persistence_note}",
-        "Use the enabled tool subject to execution policy.",
+        f"tool {name!r} is now available for this subagent session.{persistence_note}",
+        "Continue the assigned task using the enabled tool, subject to execution policy.",
     )

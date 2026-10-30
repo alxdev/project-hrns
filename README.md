@@ -243,12 +243,12 @@ orchestrator's provider system prompt. The file is read once at startup;
 restart the harness after editing it. Keep it focused on repository guidance,
 and never put API keys or other secrets in it.
 
-Subagents do not receive the full project context. The root orchestrator uses
-`AGENTS.md` to understand the repository and passes relevant instructions in
-each focused delegation request. Stable role behavior remains defined by the
-configured profiles in `subagents.json`; tool resolution and permission
-enforcement remain in Python. The interactive
-`/context` command reports the root context file.
+Each delegation starts a fresh child with focused task instructions plus the
+current originating root user turn, injected unchanged as background. The root
+carries prior results forward; children do not inherit root `AGENTS.md` or full
+conversation history. See
+[delegation](src/harness/subagents/README.md#delegation) for scope, context lifetime,
+and permissions. The interactive `/context` command reports the root context file.
 
 ## Subagent configuration
 
@@ -269,8 +269,8 @@ for manual scenarios.
 
 ## Dynamic tool capabilities
 
-Subagents can discover installed tools, request session access, and separately
-approve saving access to their profile. Authorized tool authoring can create
+Subagents can discover installed tools, request access for their invocation, and
+separately approve saving access to their profile. Authorized tool authoring can create
 reusable command-backed artifacts outside the project. The
 [subagent guide](src/harness/subagents/README.md#tool-access-and-persistence)
 explains access, persistence, and artifact creation.

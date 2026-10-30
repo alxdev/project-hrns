@@ -22,8 +22,11 @@ class DelegationTool:
                 "properties": {
                     "task": {
                         "type": "string",
-                        "description": "The focused task to investigate or complete.",
-                    }
+                        "description": "The complete bounded outcome for this profile, including "
+                        "exact targets, inputs, constraints, and required verification. Keep "
+                        "ordinary intermediate discovery and harness approvals in this "
+                        "assignment; use discovery-only scope only when that is the outcome.",
+                    },
                 },
                 "required": ["task"],
             },

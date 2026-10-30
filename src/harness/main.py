@@ -16,6 +16,7 @@ from harness.config import HarnessConfig, parse_config
 from harness.mcp import MCPConfigStore, MCPToolManager
 from harness.model_catalog import ModelCatalog, ModelChoice, build_provider_for_choice
 from harness.model_selection import MODEL_PICKER_EXIT, ModelOption
+from harness.orchestration import root_system_prompt
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
 from harness.project_context import ProjectContext, load_project_context
 from harness.provider import (
@@ -57,7 +58,7 @@ def build_provider(
     else:
         raise ValueError(f"unsupported provider: {config.provider_name}")
     if project_context is not None:
-        provider.system = project_context.system_prompt(provider.system)
+        provider.system = project_context.system_prompt(root_system_prompt(provider.system))
     return provider
 
 
@@ -93,7 +94,7 @@ async def choose_startup_model(
         choice = model_catalog.find(selected)
         try:
             provider = build_provider_for_choice(choice)
-            provider.system = project_context.system_prompt(provider.system)
+            provider.system = project_context.system_prompt(root_system_prompt(provider.system))
             return provider, choice
         except ValueError as exc:
             output.error(f"{option.key} is unavailable: {exc}")
@@ -352,6 +353,7 @@ async def main(argv: list[str] | None = None) -> int:
         events=events,
         compaction=compaction,
         name="root",
+        capture_request=True,
         before_send=load_global_mcp_tools,
     )
 

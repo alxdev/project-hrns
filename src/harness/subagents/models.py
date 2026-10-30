@@ -28,7 +28,6 @@ class SubagentProfile:
     skills: tuple[str, ...] = ()
     max_turns: int = 10
     permission_mode: str = "auto_allow"
-    reuse: bool = False
     requires_tools: bool = False
     tool_artifacts: tuple[str, ...] = ()
     unavailable_artifacts: dict[str, str] = field(default_factory=dict)

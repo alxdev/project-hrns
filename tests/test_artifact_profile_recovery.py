@@ -31,14 +31,13 @@ def artifact(tmp_path, description):
     )
 
 
-async def test_refresh_recovers_assignments_and_reused_handles_without_new_grants(tmp_path):
+async def test_refresh_recovers_assignments_for_fresh_handles_without_new_grants(tmp_path):
     old = artifact(tmp_path, "Old")
     new = artifact(tmp_path, "New")
     unavailable = SubagentProfile(
         "unavailable",
         "Test",
         "Original prompt",
-        reuse=True,
         tool_artifacts=("helper",),
         unavailable_artifacts={"helper": "Broken manifest"},
     )
@@ -49,8 +48,9 @@ async def test_refresh_recovers_assignments_and_reused_handles_without_new_grant
 
     def factory(profile):
         provider = MockProvider(
-            [
-                ProviderResponse([TextBlock("ready")], "end_turn"),
+            [ProviderResponse([TextBlock("ready")], "end_turn")]
+            if profile.name not in created
+            else [
                 ProviderResponse([ToolCall("execute", "helper", {})], "tool_use"),
                 ProviderResponse([TextBlock("done")], "end_turn"),
             ]
@@ -70,12 +70,12 @@ async def test_refresh_recovers_assignments_and_reused_handles_without_new_grant
         assert manager.profiles[name].tools == (new,)
         assert manager.profiles[name].tool_artifacts == ("helper",)
         assert manager.profiles[name].unavailable_artifacts == {}
-        assert created[name].tools.get("helper") is new
+        assert created[name].tools.get("helper") is not new
         assert manager.profiles[name].system_prompt == "Original prompt"
-    assert created["transient"].tools.get("helper") is new
+    assert created["transient"].tools.get("helper") is old
     assert manager.profiles["transient"].tools == ()
     assert manager.profiles["transient"].tool_artifacts == ()
-    assert manager.tools_for_profile("transient") == (new,)
+    assert manager.tools_for_profile("transient") == ()
     assert "tools: helper" in manager.describe()
     assert created["other"].tools.get("helper") is None
     assert manager.profiles["other"].tools == ()
@@ -328,7 +328,6 @@ async def test_real_recreation_recovers_startup_assignment_in_same_process(
                         "tools": ["read_file"],
                         "tool_artifacts": ["helper"],
                         "permission_mode": "ask",
-                        "reuse": True,
                     }
                 }
             }
@@ -348,8 +347,9 @@ async def test_real_recreation_recovers_startup_assignment_in_same_process(
 
     def factory(profile):
         provider = MockProvider(
-            [
-                ProviderResponse([TextBlock("ready")], "end_turn"),
+            [ProviderResponse([TextBlock("ready")], "end_turn")]
+            if not created
+            else [
                 ProviderResponse([ToolCall("metrics", "helper", text_input)], "tool_use"),
                 ProviderResponse([TextBlock("done")], "end_turn"),
             ]
@@ -436,7 +436,7 @@ async def test_real_recreation_recovers_startup_assignment_in_same_process(
         assert not (root / "INVALID_helper").exists()
         assert "helper" in manager.profiles["lab"].unavailable_artifacts
     assert await handle.run("Count text") == "done"
-    execution_result = created[0].provider.calls[-1][0][-1].content[0]
+    execution_result = created[1].provider.calls[-1][0][-1].content[0]
     assert executions == [("helper", text_input)]
     if replacement_approved:
         if execution_approved:
@@ -448,12 +448,14 @@ async def test_real_recreation_recovers_startup_assignment_in_same_process(
     else:
         assert execution_result.is_error and "unknown tool" in execution_result.content
     assert (tmp_path / "executed").exists() is (replacement_approved and execution_approved)
-    assert len(created) == 1
+    assert len(created) == 2
     assert path.read_bytes() == original_profile
 
 
 @pytest.mark.parametrize("assigned", [False, True])
-async def test_refresh_updates_live_nonreused_agents_and_reports_session_access(tmp_path, assigned):
+async def test_refresh_updates_live_agents_and_reports_only_active_session_access(
+    tmp_path, assigned
+):
     old = artifact(tmp_path, "Old")
     new = replace(artifact(tmp_path, "New"), command=("replacement-command",))
     profile = SubagentProfile("lab", "Lab", "Test", tools=(old,) if assigned else ())
@@ -528,4 +530,47 @@ async def test_live_agent_tracking_cleans_up_on_failure_and_cancellation(tmp_pat
         task.cancel()
     with pytest.raises(asyncio.CancelledError if cancel else RuntimeError):
         await task
+    assert not manager._live_agents
+
+
+async def test_replacement_refresh_does_not_grant_an_unassigned_active_profile(tmp_path):
+    old = artifact(tmp_path, "Old")
+    new = artifact(tmp_path, "New")
+    profiles = {
+        "assigned": SubagentProfile("assigned", "Assigned", "Test", tools=(old,)),
+        "other": SubagentProfile("other", "Other", "Test"),
+    }
+    started = asyncio.Event()
+    resume = asyncio.Event()
+    created = {}
+
+    async def respond(_messages, _definitions):
+        if len(created) == 2:
+            started.set()
+        await resume.wait()
+        return ProviderResponse([TextBlock("done")], "end_turn")
+
+    def factory(profile):
+        child = Agent(
+            MockProvider(responder=respond),
+            ToolRegistry(profile.tools),
+            AlwaysDeny(),
+            ToolContext(tmp_path),
+        )
+        created[profile.name] = child
+        return child
+
+    manager = SubagentManager(factory, profiles)
+    tasks = [asyncio.create_task(manager.delegate(name, "Wait")) for name in profiles]
+    await asyncio.wait_for(started.wait(), 2)
+    try:
+        manager.refresh_artifact_access(new)
+        assert created["assigned"].tools.get("helper") is new
+        assert manager.profiles["assigned"].tools == (new,)
+        assert created["other"].tools.get("helper") is None
+        assert manager.profiles["other"].tools == ()
+        assert manager.tools_for_profile("other") == ()
+    finally:
+        resume.set()
+        await asyncio.gather(*tasks)
     assert not manager._live_agents

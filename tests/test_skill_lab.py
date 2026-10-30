@@ -30,7 +30,6 @@ def test_lab_catalog_and_profile_resolve_without_user_home(tmp_path):
                 "tool_artifacts": [],
                 "skills": ["hello-workflow", *LAB_SKILLS],
                 "permission_mode": "inherit",
-                "reuse": False,
                 "max_turns": 30,
             }
         }
@@ -41,7 +40,6 @@ def test_lab_catalog_and_profile_resolve_without_user_home(tmp_path):
     profile = profiles["skill-lab"]
     assert profile.skills == ("hello-workflow", *LAB_SKILLS)
     assert profile.permission_mode == "inherit"
-    assert profile.reuse is False
     assert profile.max_turns == 30
     assert {tool.definition.name for tool in profile.tools} == {
         "read_file",

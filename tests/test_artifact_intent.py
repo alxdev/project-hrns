@@ -144,7 +144,9 @@ async def test_provider_generates_definition_only_after_preparation_callback(con
     assert (context.artifact_root / "helper" / "manifest.json").exists()
 
 
-async def test_validation_correction_retains_intent_but_asks_for_each_installation(context):
+async def test_validation_correction_retains_intent_and_only_valid_proposal_requests_installation(
+    context,
+):
     assert (
         payload(await tool_authoring.execute(context, {"name": "helper"}))["status"]
         == "preparation_authorized"
@@ -157,7 +159,7 @@ async def test_validation_correction_retains_intent_but_asks_for_each_installati
     corrected = await tool_authoring.execute(replace(context, tool_name="author_alias"), proposal())
     assert payload(corrected)["status"] == "created"
     assert context.approve_artifact_preparation.await_count == 1
-    assert context.approve_artifact_creation.await_count == 2
+    assert context.approve_artifact_creation.await_count == 1
     assert not context.artifact_authoring_intents
 
 
@@ -266,7 +268,7 @@ async def test_committed_installation_consumes_intent_even_when_persistence_fail
     assert not context.artifact_authoring_intents
 
 
-async def test_reused_session_keeps_intent_across_delegations(context):
+async def test_fresh_delegation_cannot_consume_previous_preparation_intent(context):
     authoring = context.tool_catalog["tool_authoring"]
     provider = MockProvider(
         [
@@ -285,20 +287,25 @@ async def test_reused_session_keeps_intent_across_delegations(context):
             provider,
             ToolRegistry(profile.tools),
             AlwaysAsk(make_tool_execution_approver(AsyncMock(return_value=True), [authoring])),
-            context,
+            replace(context, artifact_authoring_intents=set(), archived_artifacts={}),
         )
         created.append(agent)
         return agent
 
-    profile = SubagentProfile("lab", "Lab", "Lab", tools=(authoring,), reuse=True)
+    profile = SubagentProfile("lab", "Lab", "Lab", tools=(authoring,))
     manager = SubagentManager(factory, {"lab": profile})
     assert (await manager.delegate("lab", "Prepare")).result == "Prepared"
-    assert context.artifact_authoring_intents
+    assert created[0].context.artifact_authoring_intents
+    assert not context.artifact_authoring_intents
     assert not context.artifact_root.exists()
     assert (await manager.delegate("lab", "Install")).result == "Installed"
-    assert len(created) == 1
+    assert len(created) == 2
     assert context.approve_artifact_preparation.await_count == 1
-    assert context.approve_artifact_creation.await_count == 1
+    assert context.approve_artifact_creation.await_count == 0
+    result = created[1].provider.calls[-1][0][-1].content[0]
+    assert result.is_error and payload(result)["status"] == "preparation_required"
+    assert created[0].context.artifact_authoring_intents
+    assert not created[1].context.artifact_authoring_intents
     assert not context.artifact_authoring_intents
 
 
@@ -307,7 +314,7 @@ async def test_missing_installation_callback_denies_after_valid_preparation(cont
     prepared = await tool_authoring.execute(context, {"name": "helper"})
     assert payload(prepared)["status"] == "preparation_authorized"
     assert context.artifact_authoring_intents
-    validate = Mock(side_effect=AssertionError("must not validate without installation consent"))
+    validate = Mock(side_effect=AssertionError("must not validate without installation control"))
     monkeypatch.setattr(tool_authoring, "validate_artifact_definition", validate)
     result = await tool_authoring.execute(context, proposal())
     assert result.is_error and payload(result)["status"] == "approval_denied"

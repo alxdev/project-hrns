@@ -1,8 +1,8 @@
 # Subagents
 
-The subagent package lets the main agent delegate focused work to isolated
-agent instances with curated tool sets. Profiles may opt into reuse when they
-need stateful conversations.
+The subagent package lets the main agent delegate focused work to fresh
+agent instances with curated tool sets. Each child owns its agent loop for the
+current task.
 
 ## Profiles
 
@@ -22,8 +22,7 @@ For example, after installing an artifact named `csv_summary`:
       "tools": ["read_file"],
       "tool_artifacts": ["csv_summary"],
       "skills": ["project-summary"],
-      "max_turns": 10,
-      "reuse": false
+      "max_turns": 10
     }
   }
 }
@@ -32,8 +31,7 @@ For example, after installing an artifact named `csv_summary`:
 The profile name determines its delegation tool, here `delegate_analyst`.
 `description`, `system_prompt`, `permission_mode`, and `tools` are required.
 Permission modes are `inherit`, `ask`, `auto_allow`, and `deny`.
-`max_turns` defaults to 10 and must be a positive integer; `reuse` defaults to
-false, giving each delegation fresh isolated state.
+`max_turns` defaults to 10 and must be a positive integer.
 
 The required `tools` array names native tools, including `tool_authoring` when
 needed. Optional `tool_artifacts` names user-generated tools and defaults to
@@ -93,20 +91,21 @@ profile. Discovery lists installed native and artifact tools without executing
 commands, granting access, or saving configuration. Invalid artifacts are
 reported individually while valid entries remain listed. A discovery failure
 does not establish that tools are missing. `available` means assigned to the
-current session; `requires_approval` means unassigned. Execution still follows
+current invocation; `requires_approval` means unassigned. Execution still follows
 the permission policy.
 
 Use assigned tools first, then discover and request installed capabilities as
 needed within the profile's role. An approved `request_tool` adds the definition
-to the current session so the subagent can use it. A separate approval offers
-to save access in `subagents.json`. Declining or failing to save leaves current
-session access intact but grants no future profile access.
+to the current invocation so the subagent can use it. A separate approval offers
+to save access in `subagents.json`. Declining or failing to save leaves access
+intact until that invocation ends but grants no future profile access.
 
 Approved saves choose `tools` or `tool_artifacts` by tool origin and initialize
 a missing `tool_artifacts` array only when saving. Saves re-read the file after
 approval and replace it atomically, preserving edits made while the prompt was
-open. Saved access applies to subsequent delegations in the same process and
-after restart, for both native tools and artifacts.
+open. `subagents.json` remains the configuration store. Saved access applies to
+subsequent delegations in the same process and after restart, for both native
+tools and artifacts.
 
 Artifact definitions load lazily and use a lightweight in-process cache, refreshed
 on lookup when filesystem metadata changes. Startup does not fully validate artifact
@@ -125,10 +124,9 @@ Only then prepare and submit a complete ordinary creation proposal with
 `replace_invalid=false`. Installation follows normal creation approval, and execution
 is separately approved. Full replacement definitions in the first call are rejected
 before the consent callback. Discovery and access requests never archive tools.
-Successful replacement refreshes assigned profiles and existing session access,
-including active and cached agents. It does not grant access to other profiles or
-bypass execution permissions. Saving a new assignment still requires the usual
-save approval.
+Successful replacement refreshes assigned profiles and access in active invocations.
+It does not grant access to other profiles or bypass execution permissions.
+Saving a new assignment still requires the usual save approval.
 
 Capability controls return JSON text with `status`, `message`, and `next_step`.
 Respect denials without retrying the same request or bypassing them through
@@ -146,7 +144,25 @@ The main agent receives one tool per profile, such as `delegate_explorer` or
 }
 ```
 
+Every delegation creates a fresh child, which runs its own tool loop to complete
+the focused `task`. The root retains previous results and supplies any earlier
+requirements or findings needed by later tasks.
+
+The focused `task` defines the child's scope. The harness also injects the latest
+originating root user turn unchanged as background, independently of the
+orchestrator's task wording. Nested delegations inherit that same originating
+turn. This background refreshes for each root request; it is not durable
+multi-turn task memory and does not reconstruct earlier user requests.
+
+Children do not inherit root `AGENTS.md` or the root's full conversation history.
+The orchestrator passes relevant repository guidance in the focused task, while
+profiles define stable role behavior. Request context grants no tool access or
+permission: preparation consent, invalid-artifact archival, installation approval,
+execution approval, and file safety checks still apply as described below and in
+[tool access and persistence](#tool-access-and-persistence).
+
 Each delegation receives a tracking ID and a completed or failed status.
+
 Subagent lifecycle events are emitted through the generic event sink, allowing
 different UIs to show or ignore start, completion, and elapsed-time messages.
 
@@ -176,7 +192,8 @@ actions require approval, and Gmail MCP tools are scoped only to this profile.
 
 Every creation starts with `{"name": "tool_name"}` before generating a definition or
 files. Missing tools require explicit preparation consent; `preparation_authorized`
-allows a full proposal in that session, working directory, and artifact root only.
+allows a full proposal in that active invocation, working directory, and artifact
+root only. Preparation consent and unsaved tool grants end with the invocation.
 Preparation approval names the artifact root and working directory; the harness
 rechecks the target and root after consent before recording intent.
 Installation always requires its own approval callback, including explicit grants
@@ -185,9 +202,12 @@ Preparation has no write or
 execution authority. Missing preparation callbacks deny access, including noninteractive
 sessions without an explicitly configured auto-allow policy. Invalid artifacts use
 the dedicated name-only archive/recreation gate described above, even with auto-allow.
-Definition validation failures retain pending intent for correction; installation denial,
-cancellation, other failures, committed installation, or observing an installed tool
-clear it. Each corrected proposal still follows normal installation approval.
+Malformed full proposals return validation errors while retaining preparation
+consent. The child corrects and resubmits them within the same delegation's tool
+loop. The full proposal must pass validation before installation approval is
+requested; validation does not execute the command. Installation denial,
+cancellation, other failures, committed installation, or observing an installed
+tool clear preparation intent. Denials do not authorize another attempt.
 
 An authorized subagent with `tool_authoring` can create a reusable command-backed
 tool under `~/.<harness-name>/tool-artifacts/<tool-name>/`, containing
@@ -203,8 +223,8 @@ Concurrent
 operations on the same artifact from independent processes are unsupported;
 filesystem preservation assumes a single writer. Creation does not modify the harness
 installation or target project. The artifact is validated and registered for the
-creating session. Other subagents request it
-by name using the access and save approvals described above.
+creating invocation. Other subagents request it by name using the access and save
+approvals described above.
 
 Authoring and loading validate JSON Schema structure with an explicit root
 `"type": "object"`, including nested `properties` and `required` constraints.

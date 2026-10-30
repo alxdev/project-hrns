@@ -216,17 +216,21 @@ async def test_request_revocation_is_not_undone_by_next_delegation(tmp_path, ass
         "lab",
         "Test",
         "Test",
-        reuse=True,
         tool_catalog=catalog,
         tool_artifacts=("helper",) if assigned else (),
     )
-    manager = SubagentManager(RecordingAgent, {"lab": profile})
+    created = []
+
+    def factory(profile):
+        agent = RecordingAgent(profile)
+        created.append(agent)
+        return agent
+
+    manager = SubagentManager(factory, {"lab": profile})
     await manager.delegate("lab", "Initialize")
-    agent = manager._agents["lab"]
+    agent = created[0]
     if not assigned:
         agent.tools.register(catalog["helper"])
-        await manager.delegate("lab", "Remember session grant")
-        assert "helper" in manager._session_artifacts["lab"]
     if change == "invalid":
         path.write_text("{")
     elif change == "missing_manifest":
@@ -238,39 +242,46 @@ async def test_request_revocation_is_not_undone_by_next_delegation(tmp_path, ass
     assert result.is_error
     assert agent.tools.get("helper") is None
     await manager.delegate("lab", "After revocation")
-    assert manager._agents["lab"] is agent
+    assert created[1] is not agent
     assert agent.tools.get("helper") is None
-    assert agent.calls[-1][1] == []
+    assert created[1].calls[-1][1] == []
     assert manager.profiles["lab"].tools == ()
     assert manager.profiles["lab"].tool_artifacts == (("helper",) if assigned else ())
 
 
-async def test_session_grant_survives_invalid_manifest_without_becoming_persisted(tmp_path):
+async def test_completed_session_grant_does_not_survive_replacement_or_new_delegation(tmp_path):
     path = manifest(tmp_path)
     catalog = ToolCatalog([], tmp_path)
-    profile = SubagentProfile("lab", "Test", "Test", reuse=True, tool_catalog=catalog)
-    manager = SubagentManager(RecordingAgent, {"lab": profile})
+    profile = SubagentProfile("lab", "Test", "Test", tool_catalog=catalog)
+    created = []
+
+    def factory(profile):
+        agent = RecordingAgent(profile)
+        created.append(agent)
+        return agent
+
+    manager = SubagentManager(factory, {"lab": profile})
     await manager.delegate("lab", "Initialize")
-    agent = manager._agents["lab"]
+    agent = created[0]
     agent.tools.register(catalog["helper"])
     path.write_text("{")
     await manager.delegate("lab", "Detect invalid session grant")
-    assert agent.tools.get("helper") is None
-    assert "invalid manifest JSON" in agent.calls[-1][0]
+    assert created[1].tools.get("helper") is None
+    assert manager.tools_for_profile("lab") == ()
     manifest(tmp_path, "Replacement")
     manager.refresh_artifact_access(catalog["helper"])
-    assert agent.tools.get("helper").definition.description == "Replacement"
-    await manager.delegate("lab", "Retain session grant")
-    assert agent.tools.get("helper") is catalog["helper"]
+    assert agent.tools.get("helper").definition.description != "Replacement"
+    await manager.delegate("lab", "No inherited session grant")
+    assert created[2].tools.get("helper") is None
     assert manager.profiles["lab"].tool_artifacts == ()
     assert manager.profiles["lab"].tools == ()
 
 
-async def test_delegations_share_cache_and_refresh_reused_registry(tmp_path, loads):
+async def test_fresh_delegations_share_definition_cache_and_refresh_assigned_tools(tmp_path, loads):
     path = manifest(tmp_path)
     catalog = ToolCatalog([], tmp_path)
     profile = SubagentProfile(
-        "lab", "Test", "Test", reuse=True, tool_artifacts=("helper",), tool_catalog=catalog
+        "lab", "Test", "Test", tool_artifacts=("helper",), tool_catalog=catalog
     )
     created, warnings = [], []
 
@@ -291,22 +302,24 @@ async def test_delegations_share_cache_and_refresh_reused_registry(tmp_path, loa
     assert loads.call_count == 1
     manifest(tmp_path, "Updated")
     await manager.delegate("lab", "Refresh")
-    assert created[0].tools.get("helper") is not first
-    assert created[0].tools.get("helper").definition.description == "Updated"
+    assert created[3].tools.get("helper") is not first
+    assert created[3].tools.get("helper").definition.description == "Updated"
+    assert created[0].tools.get("helper") is first
     assert loads.call_count == 2
     path.write_text("{")
     await manager.delegate("lab", "Malformed")
     await manager.delegate("lab", "Still malformed")
     assert loads.call_count == 3
-    assert created[0].tools.get("helper") is None
+    assert created[4].tools.get("helper") is None
+    assert created[5].tools.get("helper") is None
     assert "invalid manifest JSON" in warnings[-1]
-    assert "invalid manifest JSON" in created[0].calls[-1][0]
+    assert "invalid manifest JSON" in created[5].calls[-1][0]
     assert manager.profiles["lab"].tool_artifacts == ("helper",)
-    assert len(created) == 2
+    assert len(created) == 6
     manifest(tmp_path, "Repaired")
     manager.refresh_artifact_access(catalog["helper"])
-    assert created[0].tools.get("helper").definition.description == "Repaired"
     await manager.delegate("lab", "After explicit replacement")
+    assert created[6].tools.get("helper").definition.description == "Repaired"
     assert loads.call_count == 4
     assert not manager.profiles["lab"].unavailable_artifacts
 

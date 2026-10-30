@@ -32,14 +32,13 @@ async def create(catalog, context, arguments):
     return await tool.execute(context, arguments)
 
 
-def setup_profiles(tmp_path, catalog, reuse=False):
+def setup_profiles(tmp_path, catalog):
     path = tmp_path / "subagents.json"
     profile = {
         "description": "Lab",
         "system_prompt": "Test tools",
         "tools": [],
         "permission_mode": "inherit",
-        "reuse": reuse,
     }
     path.write_text(json.dumps({"profiles": {"lab": profile, "other": profile}}))
     return path, load_profiles(path, catalog)
@@ -183,7 +182,7 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
     assert (name in assigned) == saved
 
 
-async def test_concurrent_saves_merge_and_cached_agent_syncs(tmp_path):
+async def test_concurrent_saves_merge_and_next_fresh_agent_gets_only_saved_grants(tmp_path):
     catalog = ToolCatalog(load_tools(TOOLS), tmp_path / "artifacts")
     result = await create(
         catalog,
@@ -197,7 +196,7 @@ async def test_concurrent_saves_merge_and_cached_agent_syncs(tmp_path):
         },
     )
     assert not result.is_error
-    path, profiles = setup_profiles(tmp_path, catalog, reuse=True)
+    path, profiles = setup_profiles(tmp_path, catalog)
     created = []
 
     def factory(profile):
@@ -212,8 +211,8 @@ async def test_concurrent_saves_merge_and_cached_agent_syncs(tmp_path):
 
     manager = SubagentManager(factory, profiles)
     handle = manager.get("lab")
-    await handle.run("Initialize cached agent")
-    # Unsaved access retains its existing lifetime in a reused session.
+    await handle.run("Initialize first agent")
+    # A completed agent's unsaved registry must not reach the next delegation.
     created[0].tools.register(catalog["write_file"])
     barrier = asyncio.Barrier(2)
 
@@ -230,10 +229,10 @@ async def test_concurrent_saves_merge_and_cached_agent_syncs(tmp_path):
     )
     assert await asyncio.gather(persist("bash"), persist("runtime_helper")) == [True, True]
     await handle.run("Use saved grants")
-    assert len(created) == 1
-    assert {"bash", "runtime_helper", "write_file"} <= {
-        item.name for item in created[0].tools.definitions()
-    }
+    assert len(created) == 2
+    assert {"bash", "runtime_helper"} <= {item.name for item in created[1].tools.definitions()}
+    assert created[1].tools.get("write_file") is None
+    assert created[0].tools.get("write_file") is not None
     assert {"bash", "runtime_helper"} <= {
         item.definition.name for item in manager.profiles["lab"].tools
     }

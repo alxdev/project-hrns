@@ -19,6 +19,7 @@ from harness.api.types import (
 from harness.compaction import CompactionManager
 from harness.permissions.policies import PermissionDecision, PermissionPolicy
 from harness.provider.base import Provider, ProviderResponseCompleted, ProviderTextDelta
+from harness.request_context import RequestContext, request_context
 from harness.tools.base import ToolContext
 from harness.tools.registry import ToolRegistry
 from harness.tools.results import capability_result
@@ -130,12 +131,17 @@ class Agent:
     quiet: bool = False
     streaming: bool = True
     before_send: Callable[[], Awaitable[None]] | None = None
+    # Set only at the user-input boundary; delegated agents inherit its context.
+    capture_request: bool = False
 
     def __post_init__(self) -> None:
         self.context = replace(self.context, tool_registry=self.tools)
 
     async def send(self, prompt: str) -> str:
         messages_before_send = list(self.messages)
+        token = None
+        if self.capture_request:
+            token = request_context.set(RequestContext(prompt))
         try:
             return await self._send(prompt)
         except asyncio.CancelledError:
@@ -144,18 +150,22 @@ class Agent:
             # the next request cannot send malformed provider history.
             self.messages = messages_before_send
             raise
+        finally:
+            if token is not None:
+                request_context.reset(token)
 
     async def _send(self, prompt: str) -> str:
         if self.before_send is not None:
             await self.before_send()
-        self.messages.append(UserMessage(prompt))
+        assignment = UserMessage(prompt)
+        self.messages.append(assignment)
         if not self.quiet:
             await self.events.emit(UserMessageEvent(prompt, self.name))
         final_text = ""
         for _ in range(self.max_turns):
             if self.compaction is not None:
                 self.messages = await self.compaction.compact(self.messages)
-            response, streamed = await self._request_response()
+            response, streamed = await self._request_response(assignment)
             self.messages.append(AssistantMessage(response.content))
             text = "".join(block.text for block in response.content if isinstance(block, TextBlock))
             if text:
@@ -245,14 +255,23 @@ class Agent:
             self.messages.extend(skill_context)
         raise RuntimeError(f"agent exceeded maximum turns ({self.max_turns})")
 
-    async def _request_response(self) -> tuple[ProviderResponse, bool]:
+    async def _request_response(self, assignment: Message) -> tuple[ProviderResponse, bool]:
+        messages = list(self.messages)
+        # Keep this invocation's exact task available even if history was trimmed or
+        # summarized. This local reference never pins assignments in reused history.
+        if not any(message is assignment for message in messages):
+            messages.insert(0, assignment)
+        origin = request_context.get()
+        if not self.capture_request and origin is not None:
+            # Render after compaction, without persisting stale origins in reused history.
+            messages.insert(0, UserMessage(origin.background()))
         stream = getattr(self.provider, "stream", None)
         if not self.streaming or not callable(stream):
-            return await self.provider.send(self.messages, self.tools.definitions()), False
+            return await self.provider.send(messages, self.tools.definitions()), False
 
         response = None
         try:
-            async with aclosing(stream(self.messages, self.tools.definitions())) as events:
+            async with aclosing(stream(messages, self.tools.definitions())) as events:
                 async for event in events:
                     if isinstance(event, ProviderTextDelta):
                         if not self.quiet:
