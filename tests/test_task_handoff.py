@@ -1,4 +1,4 @@
-"""Request context crosses delegation boundaries without entering saved history."""
+"""Delegates receive focused assignments, not automatic root request/history copies."""
 
 import asyncio
 
@@ -14,7 +14,7 @@ from harness.permissions import AlwaysAllow
 from harness.project_context import ProjectContext
 from harness.provider import MockProvider
 from harness.provider.base import ProviderResponseCompleted, ProviderTextDelta
-from harness.request_context import request_context
+from harness.request_context import render_handoff
 from harness.subagents import DelegationTool, SubagentManager, SubagentProfile
 from harness.tools.base import ToolContext
 from harness.tools.registry import ToolRegistry
@@ -28,8 +28,16 @@ def call(task="Inspect"):
     return ProviderResponse([ToolCall("delegate", "delegate_worker", {"task": task})], "tool_use")
 
 
+def text_context(messages):
+    return "\n".join(
+        block.text
+        for message in messages
+        for block in message.content
+        if isinstance(block, TextBlock)
+    )
+
+
 def agent(tmp_path, provider, tools=(), **kwargs):
-    kwargs.setdefault("capture_request", kwargs.get("name") == "root")
     return Agent(provider, ToolRegistry(tools), AlwaysAllow(), ToolContext(tmp_path), **kwargs)
 
 
@@ -42,7 +50,7 @@ def delegator(tmp_path, child_factory):
     return manager, tool
 
 
-async def test_root_send_supplies_exact_current_origin_without_history_leak(tmp_path):
+async def test_root_keeps_raw_requests_and_delegates_only_focused_tasks_to_fresh_children(tmp_path):
     children = []
 
     def factory(_profile):
@@ -59,13 +67,11 @@ async def test_root_send_supplies_exact_current_origin_without_history_leak(tmp_
     origins = ["  Exact request\nincluding whitespace\n", "New user turn"]
     for origin in origins:
         await root.send(origin)
-        assert request_context.get() is None
     calls = [entry for child in children for entry in child.provider.calls]
-    for index, (messages, _) in enumerate(calls):
-        assert messages[0].content[0].text.endswith(origins[index])
-        assert "background context only" in messages[0].content[0].text
-        assert "does not expand" in messages[0].content[0].text
-        assert messages[-1].content[0].text == "Focused assigned task:\nInspect"
+    for messages, _ in calls:
+        assert len(messages) == 1
+        assert messages[0].content[0].text == "Focused assigned task:\nInspect"
+        assert all(origin not in text_context(messages) for origin in origins)
     assert origins[0] not in str(calls[1][0])
     assert all("Original user request" not in str(child.messages) for child in children)
     assert len(children) == 2
@@ -76,21 +82,25 @@ async def test_root_send_supplies_exact_current_origin_without_history_leak(tmp_
     )
     assert manager.records()[0].prompt == "Inspect"
     assert root_provider.calls[0][1][0].input_schema["required"] == ["task"]
+    assert all(origin in text_context(root.messages) for origin in origins)
+    assert "Focused assigned task:" not in str(root.messages)
 
 
-async def test_nested_children_inherit_origin_not_parent_assignment(tmp_path):
+async def test_nested_children_receive_only_their_assigned_tasks(tmp_path):
     leaf = agent(tmp_path, MockProvider([done()]), name="leaf")
     _, nested = delegator(tmp_path, lambda _profile: leaf)
     child = agent(tmp_path, MockProvider([call("Nested task"), done()]), [nested], name="worker")
     _, tool = delegator(tmp_path, lambda _profile: child)
     root = agent(tmp_path, MockProvider([call("Parent task"), done()]), [tool], name="root")
     await root.send("Original task")
-    assert leaf.provider.calls[0][0][0].content[0].text.endswith("Original task")
-    assert leaf.provider.calls[0][0][-1].content[0].text.endswith("Nested task")
-    assert request_context.get() is None
+    assert len(leaf.provider.calls[0][0]) == 1
+    assert leaf.provider.calls[0][0][0].content[0].text == "Focused assigned task:\nNested task"
+    assert "Original task" not in str(child.provider.calls)
+    assert "Original task" not in str(leaf.provider.calls)
+    assert "Parent task" not in str(leaf.provider.calls)
 
 
-async def test_concurrent_roots_isolate_context_and_fresh_children(tmp_path):
+async def test_concurrent_roots_isolate_focused_tasks_and_fresh_children(tmp_path):
     arrived = asyncio.Event()
     origins = []
     children = []
@@ -108,21 +118,25 @@ async def test_concurrent_roots_isolate_context_and_fresh_children(tmp_path):
         return child
 
     manager, tool = delegator(tmp_path, factory)
-    roots = [agent(tmp_path, MockProvider([call(), done()]), [tool], name="root") for _ in range(2)]
+    roots = [
+        agent(tmp_path, MockProvider([call(task), done()]), [tool], name="root")
+        for task in ("First focused task", "Second focused task")
+    ]
     await asyncio.wait_for(
         asyncio.gather(roots[0].send("First origin"), roots[1].send("Second origin")), 2
     )
     assert len(children) == 2
-    assert origins[0].endswith("First origin")
-    assert origins[1].endswith("Second origin")
+    assert set(origins) == {
+        "Focused assigned task:\nFirst focused task",
+        "Focused assigned task:\nSecond focused task",
+    }
     assert manager.active() == []
-    assert request_context.get() is None
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-async def test_request_reset_on_exception_or_cancel(tmp_path, cancel):
+async def test_request_failure_and_cancellation_preserve_existing_history_rules(tmp_path, cancel):
     async def fail(_messages, _tools):
-        assert request_context.get().original_request == "Origin"
+        assert _messages[0].content[0].text == "Origin"
         if cancel:
             raise asyncio.CancelledError
         raise RuntimeError("provider failed")
@@ -130,14 +144,13 @@ async def test_request_reset_on_exception_or_cancel(tmp_path, cancel):
     root = agent(tmp_path, MockProvider(responder=fail), name="root")
     with pytest.raises(asyncio.CancelledError if cancel else RuntimeError):
         await root.send("Origin")
-    assert request_context.get() is None
     if cancel:
         assert root.messages == []
 
 
 @pytest.mark.parametrize("mode", ["sliding", "summarize"])
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_background_and_assignment_survive_every_child_compaction(tmp_path, mode, streaming):
+async def test_only_focused_assignment_survives_every_child_compaction(tmp_path, mode, streaming):
     class StreamingProvider:
         model = "streaming-test"
 
@@ -191,7 +204,7 @@ async def test_background_and_assignment_survive_every_child_compaction(tmp_path
     assert len(children) == 2
     for index, (messages, _) in enumerate(calls):
         invocation = index // 2
-        assert messages[0].content[0].text.endswith(origins[invocation])
+        assert all(origin not in text_context(messages) for origin in origins)
         assignments = [
             block.text
             for message in messages
@@ -213,7 +226,6 @@ async def test_child_failure_remains_tool_error_and_clears_lifecycle(tmp_path):
     result = provider.calls[1][0][-1].content[0]
     assert isinstance(result, ToolResult) and result.is_error
     assert manager.active() == []
-    assert request_context.get() is None
 
 
 def test_runtime_guidance_is_provider_neutral():
@@ -223,7 +235,7 @@ def test_runtime_guidance_is_provider_neutral():
     assert "Required approvals still apply" in prompt
 
 
-async def test_unnamed_root_captures_explicitly_and_direct_manager_needs_no_origin(tmp_path):
+async def test_unnamed_root_and_direct_manager_use_same_task_only_handoff(tmp_path):
     children = []
 
     def factory(_profile):
@@ -232,42 +244,55 @@ async def test_unnamed_root_captures_explicitly_and_direct_manager_needs_no_orig
         return child
 
     manager, tool = delegator(tmp_path, factory)
-    root = agent(tmp_path, MockProvider([call(), done()]), [tool], capture_request=True)
+    root = agent(tmp_path, MockProvider([call(), done()]), [tool])
     await root.send("Unnamed root origin")
-    assert children[0].provider.calls[0][0][0].content[0].text.endswith("Unnamed root origin")
+    assert children[0].provider.calls[0][0][0].content[0].text == "Focused assigned task:\nInspect"
+    assert "Unnamed root origin" not in str(children[0].provider.calls)
     await manager.delegate("worker", "Direct task")
     assert "Unnamed root origin" not in str(children[1].provider.calls[0][0])
     assert children[1].provider.calls[0][0][-1].content[0].text.endswith("Direct task")
-    assert request_context.get() is None
 
 
-async def test_streaming_child_receives_ephemeral_background(tmp_path):
+async def test_streaming_child_receives_only_focused_task(tmp_path):
     class StreamingMock(MockProvider):
         async def stream(self, messages, tools):
             yield ProviderResponseCompleted(await self.send(messages, tools))
 
     child = agent(tmp_path, StreamingMock([done()]))
     _, tool = delegator(tmp_path, lambda _profile: child)
-    root = agent(tmp_path, MockProvider([call(), done()]), [tool], capture_request=True)
+    root = agent(tmp_path, MockProvider([call(), done()]), [tool])
     await root.send("Stream origin")
-    assert child.provider.calls[0][0][0].content[0].text.endswith("Stream origin")
+    assert len(child.provider.calls[0][0]) == 1
+    assert child.provider.calls[0][0][0].content[0].text == "Focused assigned task:\nInspect"
+    assert "Stream origin" not in str(child.provider.calls)
     assert "Stream origin" not in str(child.messages)
+    assert "Stream origin" in text_context(root.messages)
 
 
-async def test_cancelled_child_clears_active_record_and_root_scope(tmp_path):
+async def test_cancelled_child_clears_active_record_and_incomplete_histories(tmp_path):
     async def cancel(_messages, _tools):
-        assert request_context.get().original_request == "Cancelled origin"
+        assert _messages[0].content[0].text == "Focused assigned task:\nInspect"
+        assert "Cancelled origin" not in str(_messages)
         raise asyncio.CancelledError
 
     child = agent(tmp_path, MockProvider(responder=cancel))
     manager, tool = delegator(tmp_path, lambda _profile: child)
-    root = agent(tmp_path, MockProvider([call()]), [tool], capture_request=True)
+    root = agent(tmp_path, MockProvider([call()]), [tool])
     with pytest.raises(asyncio.CancelledError):
         await root.send("Cancelled origin")
     assert manager.active() == []
     assert manager.records()[0].status.value == "cancelled"
     assert root.messages == child.messages == []
-    assert request_context.get() is None
+
+
+def test_handoff_retains_exact_task_and_separate_host_notices():
+    task = "  Focused α\nexact input\n"
+    assert render_handoff(task, []) == "Focused assigned task:\n" + task
+    assert render_handoff(task, ["Unavailable artifact", "Access requires approval"]) == (
+        "Focused assigned task:\n"
+        + task
+        + "\n\nHost notices:\nUnavailable artifact\nAccess requires approval"
+    )
 
 
 def test_root_runtime_assembles_guidance_and_project_context(tmp_path, monkeypatch):

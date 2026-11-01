@@ -250,10 +250,8 @@ orchestrator's provider system prompt. The file is read once at startup;
 restart the harness after editing it. Keep it focused on repository guidance,
 and never put API keys or other secrets in it.
 
-Each delegation starts a fresh child with focused task instructions plus the
-current originating root user turn, injected unchanged as background. The root
-carries prior results forward; children do not inherit root `AGENTS.md` or full
-conversation history. See
+The root interprets the user request and delegates a focused task to a fresh
+child. The user's conversation history stays with the root. See
 [delegation](src/harness/subagents/README.md#delegation) for scope, context lifetime,
 and permissions. The interactive `/context` command reports the root context file.
 

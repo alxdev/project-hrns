@@ -159,7 +159,6 @@ async def test_child_owns_real_discovery_access_approval_and_outcome(tmp_path, s
         AlwaysAllow(),
         ToolContext(tmp_path),
         name="root",
-        capture_request=True,
     )
     assert await root.send("Complete assigned workflow") == "Received outcome"
     assert len(root_provider.calls) == 2

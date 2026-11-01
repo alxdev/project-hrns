@@ -151,15 +151,13 @@ Every delegation creates a fresh child, which runs its own tool loop to complete
 the focused `task`. The root retains previous results and supplies any earlier
 requirements or findings needed by later tasks.
 
-The focused `task` defines the child's scope. The harness also injects the latest
-originating root user turn unchanged as background, independently of the
-orchestrator's task wording. Nested delegations inherit that same originating
-turn. This background refreshes for each root request; it is not durable
-multi-turn task memory and does not reconstruct earlier user requests.
+The focused `task` defines the child's scope. The child receives that root-authored
+task, its configured role, tools and assigned skill catalog, and host notices.
+The harness does not automatically append the raw user request.
 
 Children do not inherit root `AGENTS.md` or the root's full conversation history.
 The orchestrator passes relevant repository guidance in the focused task, while
-profiles define stable role behavior. Request context grants no tool access or
+profiles define stable role behavior. Delegation grants no tool access or
 permission: preparation consent, invalid-artifact archival, installation approval,
 execution approval, and file safety checks still apply as described below and in
 [tool access and persistence](#tool-access-and-persistence).

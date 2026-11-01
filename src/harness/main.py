@@ -355,7 +355,6 @@ async def main(argv: list[str] | None = None) -> int:
         events=events,
         compaction=compaction,
         name="root",
-        capture_request=True,
         before_send=load_global_mcp_tools,
     )
 

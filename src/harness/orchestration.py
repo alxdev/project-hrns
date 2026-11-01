@@ -15,8 +15,7 @@ packages, not aliases for callable tools.
 Do not split off discovery or approval as a separate assignment when it is merely an
 intermediate step toward that outcome. The child owns ordinary steps and harness approval
 requests within its assignment. A true discovery-only request remains discovery-only.
-The harness supplies the exact latest root user turn as background, not additional
-authorization or scope. Required approvals still apply. After the assigned outcome or
+Required approvals still apply. After the assigned outcome or
 genuine blocker is reported, use its evidence to plan the next overall step. Agent
 lifecycle completion alone does not prove task success; report results and limitations
 accurately, without claiming execution, verification, or completion without evidence.
