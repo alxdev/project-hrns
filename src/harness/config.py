@@ -20,6 +20,7 @@ class HarnessConfig:
     output: str
     allow_tools: bool
     history_file: Path
+    log_prompt_sent_to_model: bool = False
 
     @property
     def data_directory(self) -> Path:
@@ -67,6 +68,9 @@ def parse_config(argv: Sequence[str] | None = None) -> HarnessConfig:
         ).expanduser(),
     )
     args = parser.parse_args(argv)
+    debug_value = os.environ.get("log_prompt_sent_to_model", "false").strip().lower()
+    if debug_value not in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
+        parser.error("log_prompt_sent_to_model must be true/false, 1/0, yes/no, or on/off")
     if args.harness_name in {".", ".."} or not re.fullmatch(
         r"[A-Za-z0-9][A-Za-z0-9._-]*", args.harness_name
     ):
@@ -87,6 +91,7 @@ def parse_config(argv: Sequence[str] | None = None) -> HarnessConfig:
         output=args.output,
         allow_tools=args.allow_tools,
         history_file=args.history_file,
+        log_prompt_sent_to_model=debug_value in {"true", "1", "yes", "on"},
     )
 
 

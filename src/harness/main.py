@@ -24,6 +24,7 @@ from harness.provider import (
     LocalProvider,
     OpenAIProvider,
 )
+from harness.provider.http_transport import configure_prompt_logging
 from harness.runtime.noninteractive import run_once
 from harness.runtime.operations import OperationController
 from harness.runtime.status import format_runtime_configuration, format_startup_message
@@ -103,6 +104,7 @@ async def choose_startup_model(
 async def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     config = parse_config(argv)
+    configure_prompt_logging(config.log_prompt_sent_to_model)
     project_context = load_project_context(config.working_directory)
     model_catalog = ModelCatalog.load(Path.cwd())
     commands = build_default_commands()

@@ -20,6 +20,30 @@ from harness.tools.registry import ToolRegistry
 ROOT = Path(__file__).parents[1]
 
 
+def test_root_preserves_requested_scope_and_leaves_skill_specification_to_child():
+    prompt = root_system_prompt("Provider role")
+    assert (
+        "Preserve the user's requested scope, exact targets and inputs, and constraints" in prompt
+    )
+    assert "Do not invent additional deliverables, metrics, output fields, or reporting" in prompt
+    assert "name the skill and desired outcome; leave its full specification" in prompt
+    assert "to child activation rather than reconstructing or inventing it" in prompt
+    assert "not aliases for callable tools" in prompt
+    assert "verification only as needed to establish the requested outcome" in prompt
+
+
+def test_delegation_description_limits_verification_without_expanding_output_scope():
+    schema = DelegationTool("coder", "Configured role").definition.input_schema
+    assert schema["required"] == ["task"]
+    assert set(schema["properties"]) == {"task"}
+    description = schema["properties"]["task"]["description"]
+    assert "the user's requested scope, exact targets, inputs, constraints" in description
+    assert "verification only as needed and proportional to establish the requested" in description
+    assert "without extra deliverables or reporting requirements" in description
+    assert "Identify skills separately from callable tools" in description
+    assert "ordinary intermediate discovery and harness approvals in this assignment" in description
+
+
 def test_outcome_guidance_and_profile_metadata_keep_task_only_api():
     profiles = json.loads((ROOT / "subagents.json").read_text())["profiles"]
     for name, config in profiles.items():

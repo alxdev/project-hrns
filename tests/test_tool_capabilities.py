@@ -552,5 +552,7 @@ async def test_main_assembles_shared_subagent_instructions(tmp_path, monkeypatch
     assert CAPABILITY_INSTRUCTIONS.strip() in child.system
     assert ("Example workflow" in child.system) is with_skill
     assert root.system == "Root prompt"
+    assert "Example workflow" not in root.system
+    assert "Required steps" not in root.system
     definitions = {definition.name for definition in child.calls[0][1]}
     assert {"list_available_tools", "request_tool"} <= definitions

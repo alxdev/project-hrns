@@ -65,8 +65,11 @@ or locations:
 }
 ```
 
-A profile's `skills` array selects its catalog. The subagent calls
-`activate_skill` to load the full instructions, skill directory, and supporting
+A profile's `skills` array selects the child's catalog. The root receives no global
+skill inventory, but may name a user-provided skill explicitly in the delegation
+`task`. The child model selects and activates relevant assigned skills.
+
+It calls `activate_skill` to load the full instructions, skill directory, and supporting
 file inventory. Successful activation adds a protected instruction message;
 repeated activation reuses it, and compaction preserves its complete content.
 Skills grant neither tools nor permissions, and an empty `skills` array permits

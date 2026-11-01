@@ -93,6 +93,10 @@ The application loads configuration from `.env` automatically. `.env` is
 ignored by git, so keep provider credentials there and never commit them.
 Use `OPENAI_API_KEY` for OpenAI or `ANTHROPIC_API_KEY` for Anthropic.
 
+`log_prompt_sent_to_model` defaults to `false`. Set it to `true` to log the actual
+prompts sent to models, including system instructions, to stderr. These logs may expose
+user data, file contents, and tool results; keep sensitive data out of shared logs.
+
 Available models are cataloged in `local_models.json` and
 `cloud_models.json`. Use `/models` to list them and `/models provider/model` to
 switch the active provider and model. In the Rich/prompt-toolkit UI, the
@@ -217,6 +221,9 @@ to choose another entry, or cancel to exit. After startup:
 /models list                    Print all catalog entries
 /models local/litert/<model>    Select a local model
 /models openai/gpt-4o-mini      Select a cloud model
+/models openai/gpt-4.1-mini     Select GPT-4.1 Mini
+/models openai/gpt-5-mini       Select GPT-5 Mini
+/models openai/gpt-5.6-luna     Select GPT-5.6 Luna
 ```
 
 The regular OpenAI provider and OpenAI-compatible local providers are separate
@@ -261,8 +268,8 @@ delegation, and permissions.
 
 Skills provide reusable workflow instructions through `SKILL.md` directories
 in `.agents/skills/` or `~/.agents/skills/`, with optional catalog overrides in
-`skills.json`. Profiles select skills to activate as needed; skill instructions
-survive compaction and do not grant tools or permissions. See
+`skills.json`. Profiles assign skills; child models activate relevant ones. Skill
+instructions survive compaction and grant no tools or permissions. See
 [skills and file access](src/harness/subagents/README.md#skills-and-file-access)
 for setup and the [skill capability walkthrough](docs/skill-capability-walkthrough.md)
 for manual scenarios.

@@ -64,6 +64,8 @@ class OpenAIProvider:
         }
         if tools:
             payload["tools"] = [self._tool_to_wire(tool) for tool in tools]
+            if self.model == "gpt-5.6-luna":
+                payload["reasoning_effort"] = "none"
 
         api_key = self._api_key
         assert api_key is not None
@@ -140,6 +142,8 @@ class OpenAIProvider:
         }
         if tools:
             payload["tools"] = [self._tool_to_wire(tool) for tool in tools]
+            if self.model == "gpt-5.6-luna":
+                payload["reasoning_effort"] = "none"
         assert self._api_key is not None
         headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
         text_parts: list[str] = []
