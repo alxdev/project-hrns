@@ -16,6 +16,7 @@ from harness.api.types import (
     ToolResult,
 )
 from harness.provider.base import ProviderResponseCompleted, ProviderStreamEvent, ProviderTextDelta
+from harness.provider.http_transport import provider_http_client
 
 
 class AnthropicProvider:
@@ -47,8 +48,6 @@ class AnthropicProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolDefinition],
     ) -> ProviderResponse:
-        import httpx
-
         payload: dict[str, Any] = {
             "model": self._model,
             "max_tokens": self.max_tokens,
@@ -72,7 +71,9 @@ class AnthropicProvider:
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with provider_http_client(
+            provider="Anthropic", base_url=self.base_url, operation="request"
+        ) as client:
             response = await client.post(
                 f"{self.base_url}/v1/messages",
                 headers=headers,
@@ -104,8 +105,6 @@ class AnthropicProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolDefinition],
     ) -> AsyncIterator[ProviderStreamEvent]:
-        import httpx
-
         payload: dict[str, Any] = {
             "model": self._model,
             "max_tokens": self.max_tokens,
@@ -130,7 +129,9 @@ class AnthropicProvider:
         }
         blocks: dict[int, dict[str, str]] = {}
         stop_reason = "unknown"
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with provider_http_client(
+            provider="Anthropic", base_url=self.base_url, operation="streaming request"
+        ) as client:
             async with client.stream(
                 "POST", f"{self.base_url}/v1/messages", headers=headers, json=payload
             ) as response:

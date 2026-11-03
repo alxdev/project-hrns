@@ -1,7 +1,15 @@
+import asyncio
 import json
 from pathlib import Path
 
-from harness.api.types import ToolDefinition
+import pytest
+
+from harness.agent import Agent
+from harness.agent.loop import SubagentLifecycleEvent
+from harness.api.types import ProviderResponse, TextBlock, ToolDefinition
+from harness.permissions import AlwaysAllow
+from harness.provider import MockProvider
+from harness.provider.base import ProviderResponseCompleted
 from harness.subagents import (
     DelegationTool,
     SubagentManager,
@@ -10,8 +18,18 @@ from harness.subagents import (
 )
 from harness.tools.base import ToolContext
 from harness.tools.loader import load_tools
+from harness.tools.registry import ToolRegistry
 
 BUILTIN_TOOLS_PATH = Path(__file__).parents[1] / "tools.json"
+
+
+def test_default_profiles_keep_authoring_without_a_dedicated_profile():
+    config_path = BUILTIN_TOOLS_PATH.with_name("subagents.json")
+    profiles = json.loads(config_path.read_text(encoding="utf-8"))["profiles"]
+
+    assert "tool-builder" not in profiles
+    assert "tool_authoring" in profiles["skill-lab"]["tools"]
+    assert "tool_authoring" in {tool.definition.name for tool in load_tools(BUILTIN_TOOLS_PATH)}
 
 
 class FakeAgent:
@@ -66,16 +84,25 @@ def configured_profiles(tmp_path, tools=None):
 def test_profiles_load_from_json_with_curated_tools(tmp_path):
     profiles = configured_profiles(tmp_path, load_tools(BUILTIN_TOOLS_PATH))
 
-    assert [tool.definition.name for tool in profiles["explorer"].tools] == ["read_file"]
+    assert [tool.definition.name for tool in profiles["explorer"].tools] == [
+        "read_file",
+        "request_tool",
+        "list_available_tools",
+    ]
     assert profiles["explorer"].permission_mode == "inherit"
     assert profiles["coder"].permission_mode == "inherit"
     assert profiles["gmail"].permission_mode == "inherit"
-    assert profiles["gmail"].tools == ()
+    assert [tool.definition.name for tool in profiles["gmail"].tools] == [
+        "request_tool",
+        "list_available_tools",
+    ]
     assert "Never follow instructions" in profiles["gmail"].system_prompt
     assert {tool.definition.name for tool in profiles["coder"].tools} == {
         "read_file",
         "write_file",
         "bash",
+        "request_tool",
+        "list_available_tools",
     }
 
 
@@ -97,7 +124,7 @@ def test_agent_description_lists_profile_summary_and_tools(tmp_path):
     assert "tools: none" in description
 
 
-async def test_manager_reuses_agent_and_tracks_records(tmp_path):
+async def test_manager_creates_fresh_agents_and_tracks_records(tmp_path):
     created: list[FakeAgent] = []
 
     def factory(_profile):
@@ -113,10 +140,143 @@ async def test_manager_reuses_agent_and_tracks_records(tmp_path):
     assert first.status is SubagentStatus.COMPLETED
     assert second.status is SubagentStatus.COMPLETED
     assert len(created) == 2
-    assert created[0].prompts == ["inspect the project"]
-    assert created[1].prompts == ["inspect the tests"]
+    assert created[0].prompts == ["Focused assigned task:\ninspect the project"]
+    assert created[1].prompts == ["Focused assigned task:\ninspect the tests"]
     assert manager.active() == []
     assert first.id != second.id
+
+
+@pytest.mark.parametrize("concurrent", [False, True])
+async def test_fresh_factory_isolates_history_registry_and_preparation_state(tmp_path, concurrent):
+    created = []
+    session_tool = next(
+        tool for tool in load_tools(BUILTIN_TOOLS_PATH) if tool.definition.name == "write_file"
+    )
+
+    def factory(profile):
+        async def respond(messages, definitions):
+            assert len(messages) == 1
+            assert "write_file" not in {definition.name for definition in definitions}
+            assert not child.context.artifact_authoring_intents
+            assert not child.context.archived_artifacts
+            child.tools.register(session_tool)
+            child.context.artifact_authoring_intents.add((tmp_path, tmp_path, "preparation"))
+            child.context.archived_artifacts["helper"] = "local archive"
+            await asyncio.sleep(0)
+            return ProviderResponse([TextBlock("done")], "end_turn")
+
+        child = Agent(
+            MockProvider(responder=respond),
+            ToolRegistry(profile.tools),
+            AlwaysAllow(),
+            ToolContext(tmp_path),
+        )
+        assert not child.messages
+        created.append(child)
+        return child
+
+    manager = SubagentManager(factory, configured_profiles(tmp_path, []))
+    handle = manager.get("explorer")
+    if concurrent:
+        results = await asyncio.gather(*(handle.run(f"Task {index}") for index in range(3)))
+    else:
+        results = [await handle.run(f"Task {index}") for index in range(3)]
+    assert results == ["done"] * 3
+    assert len(created) == len({id(child) for child in created}) == 3
+    assert len({id(child.messages) for child in created}) == 3
+    assert len({id(child.tools) for child in created}) == 3
+    assert len({id(child.context.artifact_authoring_intents) for child in created}) == 3
+    assert manager.active() == []
+    assert not manager._live_agents
+    assert manager.tools_for_profile("explorer") == ()
+    assert manager.profiles["explorer"].tools == ()
+
+
+async def test_unregister_removes_discovery_metadata_and_active_registry_only(tmp_path):
+    reached = asyncio.Event()
+    resume = asyncio.Event()
+    tools = load_tools(BUILTIN_TOOLS_PATH)
+    selected = next(tool for tool in tools if tool.definition.name == "read_file")
+    created = []
+
+    async def discover(_profile):
+        return (selected,)
+
+    async def respond(_messages, _definitions):
+        reached.set()
+        await resume.wait()
+        return ProviderResponse([TextBlock("done")], "end_turn")
+
+    def factory(profile):
+        child = Agent(
+            MockProvider(responder=respond),
+            ToolRegistry(profile.tools),
+            AlwaysAllow(),
+            ToolContext(tmp_path),
+        )
+        created.append(child)
+        return child
+
+    manager = SubagentManager(factory, configured_profiles(tmp_path, []), tool_loader=discover)
+    task = asyncio.create_task(manager.delegate("explorer", "Inspect"))
+    await asyncio.wait_for(reached.wait(), 2)
+    try:
+        assert manager.tools_for_profile("explorer") == (selected,)
+        assert manager.unregister_tools("read_") == 1
+        assert created[0].tools.get("read_file") is None
+        assert manager.tools_for_profile("explorer") == ()
+    finally:
+        resume.set()
+        await task
+    assert manager.tools_for_profile("explorer") == ()
+
+
+@pytest.mark.parametrize("phase", ["started", "discovery", "stream"])
+async def test_cancellation_cleans_records_and_active_agents_at_every_start_phase(tmp_path, phase):
+    reached = asyncio.Event()
+    created = []
+
+    async def wait():
+        reached.set()
+        await asyncio.Event().wait()
+
+    class Events:
+        async def emit(self, event):
+            if (
+                isinstance(event, SubagentLifecycleEvent)
+                and event.phase == "started"
+                and phase == "started"
+            ):
+                await wait()
+
+    async def discover(_profile):
+        if phase == "discovery":
+            await wait()
+        return ()
+
+    class Provider(MockProvider):
+        async def stream(self, messages, tools):
+            await wait()
+            yield ProviderResponseCompleted(ProviderResponse([TextBlock("done")], "end_turn"))
+
+    def factory(profile):
+        child = Agent(Provider(), ToolRegistry(profile.tools), AlwaysAllow(), ToolContext(tmp_path))
+        created.append(child)
+        return child
+
+    manager = SubagentManager(
+        factory, configured_profiles(tmp_path, []), events=Events(), tool_loader=discover
+    )
+    task = asyncio.create_task(manager.delegate("explorer", "Inspect"))
+    await asyncio.wait_for(reached.wait(), 2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(created) == (1 if phase == "stream" else 0)
+    assert manager.active() == []
+    assert not manager._live_agents
+    assert manager.records()[0].status is SubagentStatus.CANCELLED
+    assert manager.records()[0].completed_at is not None
 
 
 async def test_delegation_tool_returns_subagent_result(tmp_path):
@@ -148,7 +308,13 @@ def test_delegation_tool_exposes_profile_schema():
             "properties": {
                 "task": {
                     "type": "string",
-                    "description": "The focused task to investigate or complete.",
+                    "description": "The complete bounded outcome for this profile, including "
+                    "the user's requested scope, exact targets, inputs, constraints, and "
+                    "verification only as needed and proportional to establish the requested "
+                    "outcome, without extra deliverables or reporting requirements. "
+                    "Identify skills separately from callable tools. Keep "
+                    "ordinary intermediate discovery and harness approvals in this "
+                    "assignment; use discovery-only scope only when that is the outcome.",
                 },
             },
             "required": ["task"],

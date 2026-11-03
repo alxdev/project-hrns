@@ -17,6 +17,9 @@ from prompt_toolkit.layout import Layout
 from prompt_toolkit.layout.containers import HSplit
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.widgets import Button, Dialog, Label, RadioList
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
 
 from harness.api.types import ToolDefinition
 from harness.model_selection import MODEL_PICKER_EXIT, ModelOption
@@ -36,8 +39,18 @@ class PromptToolkitInput:
             return await self.session.prompt_async("❯ ")
 
     async def approve(self, tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
-        prompt = f"Approve {tool.name} {json.dumps(arguments, sort_keys=True)}? [y/N] "
-        with patch_stdout():
+        details = Text(f"{tool.description}\n\nArguments:\n")
+        details.append(json.dumps(arguments, indent=2, sort_keys=True, ensure_ascii=False))
+        prompt = (
+            "Archive invalid artifact and prepare replacement? [y/N] "
+            if tool.name == "recreate_invalid_artifact"
+            else f"Approve {tool.name}? [y/N] "
+        )
+        # Rich emits ANSI styles; preserve them through prompt-toolkit's proxy.
+        with patch_stdout(raw=True):
+            Console().print(
+                Panel(details, title=Text(f"Approval · {tool.name}"), border_style="yellow")
+            )
             answer = await self.session.prompt_async(prompt)
         return answer.strip().lower() in {"y", "yes"}
 

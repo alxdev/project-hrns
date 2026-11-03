@@ -15,6 +15,7 @@ from harness.api.types import (
     ToolResult,
 )
 from harness.provider.base import ProviderResponseCompleted, ProviderStreamEvent, ProviderTextDelta
+from harness.provider.http_transport import provider_http_client
 
 
 class OpenAIProvider:
@@ -48,8 +49,6 @@ class OpenAIProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolDefinition],
     ) -> ProviderResponse:
-        import httpx
-
         wire_messages: list[dict[str, Any]] = [{"role": "system", "content": self.system}]
         for message in messages:
             translated = self._message_to_wire(message)
@@ -65,6 +64,8 @@ class OpenAIProvider:
         }
         if tools:
             payload["tools"] = [self._tool_to_wire(tool) for tool in tools]
+            if self.model == "gpt-5.6-luna":
+                payload["reasoning_effort"] = "none"
 
         api_key = self._api_key
         assert api_key is not None
@@ -72,7 +73,9 @@ class OpenAIProvider:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with provider_http_client(
+            provider="OpenAI", base_url=self.base_url, operation="request"
+        ) as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
@@ -127,8 +130,6 @@ class OpenAIProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolDefinition],
     ) -> AsyncIterator[ProviderStreamEvent]:
-        import httpx
-
         wire_messages: list[dict[str, Any]] = [{"role": "system", "content": self.system}]
         for message in messages:
             translated = self._message_to_wire(message)
@@ -141,12 +142,16 @@ class OpenAIProvider:
         }
         if tools:
             payload["tools"] = [self._tool_to_wire(tool) for tool in tools]
+            if self.model == "gpt-5.6-luna":
+                payload["reasoning_effort"] = "none"
         assert self._api_key is not None
         headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
         text_parts: list[str] = []
         tool_parts: dict[int, dict[str, str]] = {}
         finish_reason: str | None = None
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with provider_http_client(
+            provider="OpenAI", base_url=self.base_url, operation="streaming request"
+        ) as client:
             async with client.stream(
                 "POST", f"{self.base_url}/chat/completions", headers=headers, json=payload
             ) as response:

@@ -37,6 +37,8 @@ class RichOutput:
             self._render_subagent(entry, event.is_new)
         elif entry.kind == "mcp_discovery":
             self._render_mcp_discovery(entry, event.is_new)
+        elif entry.kind == "tool_log":
+            self._render_tool_log(entry)
 
     def _update_activity(self, activity: str | None) -> None:
         self._activity = activity
@@ -114,6 +116,12 @@ class RichOutput:
             return
         style = "red" if entry.status == "failed" else "dim"
         self._print_persistently(f"[{style}]{entry.content}[/{style}]")
+
+    def _render_tool_log(self, entry: TranscriptEntry) -> None:
+        prefix = entry.metadata.get("log_prefix", "")
+        self._print_persistently(
+            f"{prefix}{entry.content}", style="dim", markup=False, highlight=False
+        )
 
     def write(self, text: str) -> None:
         self.console.print(text, markup=False)

@@ -44,6 +44,11 @@ containing the changed entry and current activity label, rather than depending
 on provider or agent internals. This keeps the UI replaceable while making the
 transcript the rendering model.
 
+Shell and artifact stderr is represented as `tool_log` transcript entries
+under the actual tool name and rendered as literal text with UI styling.
+It is not sent to the provider as a separate model request; the command's
+structured stdout and final failure result remain the model-facing tool output.
+
 Streaming-capable providers are used by default. Their text arrives as
 transcript updates and is printed incrementally; completion or interruption
 closes the output line. Providers that only implement `send()` produce a

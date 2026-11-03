@@ -3,8 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from harness.tools.base import Tool
+
+if TYPE_CHECKING:
+    from harness.tools.catalog import ToolCatalog
 
 
 class SubagentStatus(StrEnum):
@@ -21,10 +25,13 @@ class SubagentProfile:
     description: str
     system_prompt: str
     tools: tuple[Tool, ...] = ()
+    skills: tuple[str, ...] = ()
     max_turns: int = 10
     permission_mode: str = "auto_allow"
-    reuse: bool = False
     requires_tools: bool = False
+    tool_artifacts: tuple[str, ...] = ()
+    unavailable_artifacts: dict[str, str] = field(default_factory=dict)
+    tool_catalog: ToolCatalog | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass

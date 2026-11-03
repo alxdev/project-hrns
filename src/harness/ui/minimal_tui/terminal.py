@@ -32,6 +32,9 @@ class TerminalUI:
         elif entry.kind == "mcp_discovery" and not event.is_new:
             label = "error" if entry.status == "failed" else "info"
             print(f"[{label}] {entry.content}")
+        elif entry.kind == "tool_log":
+            prefix = entry.metadata.get("log_prefix", "")
+            print(f"{prefix}{entry.content}", file=sys.stderr)
 
     def _render_assistant(self, entry: TranscriptEntry, is_new: bool) -> None:
         if entry.status == "streaming":
@@ -73,10 +76,14 @@ class TerminalUI:
         print(f"← {entry.content} {entry.status} ({elapsed_seconds:.1f}s)")
 
     async def approve(self, tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
-        answer = await asyncio.to_thread(
-            input,
-            f"Approve {tool.name} {json.dumps(arguments, sort_keys=True)}? [y/N] ",
+        print(f"Approval · {tool.name}\n{tool.description}\n\nArguments:")
+        print(json.dumps(arguments, indent=2, sort_keys=True, ensure_ascii=False))
+        prompt = (
+            "Archive invalid artifact and prepare replacement? [y/N] "
+            if tool.name == "recreate_invalid_artifact"
+            else f"Approve {tool.name}? [y/N] "
         )
+        answer = await asyncio.to_thread(input, prompt)
         return answer.strip().lower() in {"y", "yes"}
 
     async def prompt_secret(self, variable: str) -> str:

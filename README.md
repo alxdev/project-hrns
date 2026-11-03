@@ -4,7 +4,7 @@ The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
 changing the agent loop.
 
-## Current status: Phase 7 — MCP tool integration
+## Current status: Phase 8 — Skills and extensible tool capabilities
 
 Phase 1 establishes the smallest useful harness:
 
@@ -92,6 +92,10 @@ python -m harness
 The application loads configuration from `.env` automatically. `.env` is
 ignored by git, so keep provider credentials there and never commit them.
 Use `OPENAI_API_KEY` for OpenAI or `ANTHROPIC_API_KEY` for Anthropic.
+
+`log_prompt_sent_to_model` defaults to `false`. Set it to `true` to log the actual
+prompts sent to models, including system instructions, to stderr. These logs may expose
+user data, file contents, and tool results; keep sensitive data out of shared logs.
 
 Available models are cataloged in `local_models.json` and
 `cloud_models.json`. Use `/models` to list them and `/models provider/model` to
@@ -217,6 +221,9 @@ to choose another entry, or cancel to exit. After startup:
 /models list                    Print all catalog entries
 /models local/litert/<model>    Select a local model
 /models openai/gpt-4o-mini      Select a cloud model
+/models openai/gpt-4.1-mini     Select GPT-4.1 Mini
+/models openai/gpt-5-mini       Select GPT-5 Mini
+/models openai/gpt-5.6-luna     Select GPT-5.6 Luna
 ```
 
 The regular OpenAI provider and OpenAI-compatible local providers are separate
@@ -243,28 +250,35 @@ orchestrator's provider system prompt. The file is read once at startup;
 restart the harness after editing it. Keep it focused on repository guidance,
 and never put API keys or other secrets in it.
 
-Subagents do not receive the full project context. The root orchestrator uses
-`AGENTS.md` to understand the repository and passes relevant instructions in
-each focused delegation request. Stable role behavior remains defined by the
-configured profiles in `subagents.json`; tool resolution and permission
-enforcement remain in Python. The interactive
-`/context` command reports the root context file.
+The root interprets the user request and delegates a focused task to a fresh
+child. The user's conversation history stays with the root. See
+[delegation](src/harness/subagents/README.md#delegation) for scope, context lifetime,
+and permissions. The interactive `/context` command reports the root context file.
 
 ## Subagent configuration
 
-Subagents are configured in `subagents.json` in the configured working
-directory. The file is authoritative: if it is missing or contains an empty
-`profiles` object, no subagents are configured. There is no Python profile
-fallback.
+`subagents.json` in the configured working directory defines the available
+profiles, their tools, and their skills. See the
+[subagent guide](src/harness/subagents/README.md) for profile configuration,
+delegation, and permissions.
 
-Each profile names existing built-in tools by name. MCP-only profiles can use
-an empty `tools` array with `requires_tools` enabled; their tools are loaded
-when the profile is delegated to. Tool implementations and permission checks
-remain enforced by Python code.
+## Skills
 
-The repository's `subagents.json` provides the current explorer, coder, and
-Gmail profiles. Copy or create this file in another working directory to
-configure the profiles available there.
+Skills provide reusable workflow instructions through `SKILL.md` directories
+in `.agents/skills/` or `~/.agents/skills/`, with optional catalog overrides in
+`skills.json`. Profiles assign skills; child models activate relevant ones. Skill
+instructions survive compaction and grant no tools or permissions. See
+[skills and file access](src/harness/subagents/README.md#skills-and-file-access)
+for setup and the [skill capability walkthrough](docs/skill-capability-walkthrough.md)
+for manual scenarios.
+
+## Dynamic tool capabilities
+
+Subagents can discover installed tools, request access for their invocation, and
+separately approve saving access to their profile. Authorized tool authoring can create
+reusable command-backed artifacts outside the project. The
+[subagent guide](src/harness/subagents/README.md#tool-access-and-persistence)
+explains access, persistence, and artifact creation.
 
 ## Built-in tool configuration
 
@@ -304,9 +318,11 @@ To add a tool to this harness:
    should be allowed to use it.
 5. Restart the harness after changing the JSON catalog or Python handler.
 
-Handlers are trusted Python code loaded only from the harness's
-`harness.tools.handlers` package. JSON controls the tool definition exposed to
-the model; it does not bypass permission checks or create executable behavior.
+Handlers in the project `tools.json` are trusted Python code loaded from the
+harness's `harness.tools.handlers` package. JSON controls the tool definition
+exposed to the model; it does not bypass permission checks or create
+executable behavior. For user-authored command-backed tools, see
+[artifact authoring](src/harness/subagents/README.md#artifact-authoring).
 
 ## Architecture
 

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
 from harness.agent import Agent
-from harness.agent.loop import NullEventSink
+from harness.agent.loop import NullEventSink, ToolLogEvent
 from harness.api.types import ToolDefinition
 from harness.commands import CommandContext, build_default_commands
 from harness.compaction import CompactionManager
@@ -15,6 +16,7 @@ from harness.config import HarnessConfig, parse_config
 from harness.mcp import MCPConfigStore, MCPToolManager
 from harness.model_catalog import ModelCatalog, ModelChoice, build_provider_for_choice
 from harness.model_selection import MODEL_PICKER_EXIT, ModelOption
+from harness.orchestration import root_system_prompt
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
 from harness.project_context import ProjectContext, load_project_context
 from harness.provider import (
@@ -22,16 +24,21 @@ from harness.provider import (
     LocalProvider,
     OpenAIProvider,
 )
+from harness.provider.http_transport import configure_prompt_logging
 from harness.runtime.noninteractive import run_once
 from harness.runtime.operations import OperationController
 from harness.runtime.status import format_runtime_configuration, format_startup_message
+from harness.skills import SkillError, load_skills
 from harness.subagents import (
     DelegationTool,
     SubagentManager,
     SubagentProfile,
     load_profiles,
 )
+from harness.subagents.instructions import assemble_system_prompt
+from harness.tools.access import make_profile_tool_access_persister, make_tool_execution_approver
 from harness.tools.base import ToolContext
+from harness.tools.catalog import ToolCatalog
 from harness.tools.loader import load_tools
 from harness.tools.registry import ToolRegistry
 from harness.transcript import Transcript, TranscriptEventSink
@@ -52,7 +59,7 @@ def build_provider(
     else:
         raise ValueError(f"unsupported provider: {config.provider_name}")
     if project_context is not None:
-        provider.system = project_context.system_prompt(provider.system)
+        provider.system = project_context.system_prompt(root_system_prompt(provider.system))
     return provider
 
 
@@ -88,7 +95,7 @@ async def choose_startup_model(
         choice = model_catalog.find(selected)
         try:
             provider = build_provider_for_choice(choice)
-            provider.system = project_context.system_prompt(provider.system)
+            provider.system = project_context.system_prompt(root_system_prompt(provider.system))
             return provider, choice
         except ValueError as exc:
             output.error(f"{option.key} is unavailable: {exc}")
@@ -97,6 +104,7 @@ async def choose_startup_model(
 async def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     config = parse_config(argv)
+    configure_prompt_logging(config.log_prompt_sent_to_model)
     project_context = load_project_context(config.working_directory)
     model_catalog = ModelCatalog.load(Path.cwd())
     commands = build_default_commands()
@@ -155,9 +163,38 @@ async def main(argv: list[str] | None = None) -> int:
             output.error(message)
         return 2
     try:
-        profiles = load_profiles(config.working_directory / "subagents.json", base_tools)
+        skill_catalog = load_skills(
+            config.working_directory / "skills.json",
+            config.working_directory,
+        )
+    except SkillError as exc:
+        message = f"invalid skills configuration: {exc}"
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+        return 2
+    artifact_root = config.data_directory / "tool-artifacts"
+    tool_catalog = ToolCatalog(base_tools, artifact_root)
+    if not config.non_interactive:
+        permissions = AlwaysAsk(make_tool_execution_approver(approve_tool, base_tools))
+    try:
+        profiles = load_profiles(config.working_directory / "subagents.json", tool_catalog)
     except ValueError as exc:
         message = f"invalid subagents.json: {exc}"
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+        return 2
+    missing_skills = {
+        skill_name
+        for profile in profiles.values()
+        for skill_name in profile.skills
+        if skill_catalog.get(skill_name) is None
+    }
+    if missing_skills:
+        message = f"unknown skills in subagents.json: {', '.join(sorted(missing_skills))}"
         if output is None:
             print(message, file=sys.stderr)
         else:
@@ -180,24 +217,100 @@ async def main(argv: list[str] | None = None) -> int:
     )
     context = ToolContext(config.working_directory)
 
+    async def approve_artifact_replacement(tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
+        if config.non_interactive or input_adapter is None or output is None:
+            return False
+        with output.suspend():
+            return await input_adapter.approve(tool, arguments)
+
     def create_subagent(profile: SubagentProfile) -> Agent:
         subagent_provider = (
             build_provider_for_choice(current_choice)
             if current_choice is not None
             else build_provider(config)
         )
-        subagent_provider.system = profile.system_prompt
+        profile_skills = skill_catalog.for_names(profile.skills)
+        skill_prompt = profile_skills.catalog_prompt()
+        subagent_provider.system = assemble_system_prompt(profile.system_prompt, skill_prompt)
         subagent_permissions = {
             "auto_allow": AlwaysAllow(),
             "inherit": permissions,
             "ask": permissions,
             "deny": AlwaysDeny(),
         }.get(profile.permission_mode, permissions)
+        registry = ToolRegistry(profile.tools)
+
+        async def approve_artifact_preparation(
+            tool: ToolDefinition, arguments: dict[str, Any]
+        ) -> bool:
+            if profile.permission_mode == "auto_allow":
+                return True
+            if config.non_interactive or input_adapter is None or output is None:
+                return False
+            with output.suspend():
+                return await input_adapter.approve(tool, arguments)
+
+        async def approve_artifact_creation(
+            tool: ToolDefinition, arguments: dict[str, Any]
+        ) -> bool:
+            if profile.permission_mode == "auto_allow":
+                return True
+            if config.non_interactive:
+                return config.allow_tools
+            if input_adapter is None or output is None:
+                return False
+            with output.suspend():
+                return await input_adapter.approve(tool, arguments)
+
+        async def emit_log(tool_name: str, text: str, stream: str) -> None:
+            await events.emit(
+                ToolLogEvent(
+                    name=tool_name,
+                    text=text,
+                    stream=stream,
+                    agent=profile.name,
+                    log_prefix="  ↳ ",
+                )
+            )
+
+        async def approve_persist_tool(tool: ToolDefinition, arguments: dict[str, Any]) -> bool:
+            if input_adapter is None or output is None:
+                return False
+            with output.suspend():
+                return await input_adapter.approve(tool, arguments)
+
+        persist_tool_access = make_profile_tool_access_persister(
+            config.working_directory / "subagents.json",
+            profile.name,
+            approve_persist_tool,
+            tool_catalog,
+            report_error=output.error if output is not None else None,
+            # The factory runs only after the manager has been initialized.
+            on_saved=lambda name: subagents.grant_tool_access(profile.name, tool_catalog[name]),
+        )
+
+        agent_context = replace(
+            context,
+            allowed_read_roots=tuple(skill.root for skill in profile_skills.skills.values()),
+            skill_catalog=skill_catalog,
+            allowed_skills=profile.skills,
+            tool_registry=registry,
+            persist_tool_access=persist_tool_access,
+            emit_log=emit_log,
+            artifact_root=artifact_root,
+            tool_catalog=tool_catalog,
+            approve_artifact_replacement=approve_artifact_replacement,
+            approve_artifact_creation=approve_artifact_creation,
+            on_artifact_replaced=lambda tool: subagents.refresh_artifact_access(tool),
+            archived_artifacts={},
+            approve_artifact_preparation=approve_artifact_preparation,
+            artifact_authoring_intents=set(),
+        )
         return Agent(
             provider=subagent_provider,
-            tools=ToolRegistry(profile.tools),
+            tools=registry,
             permissions=subagent_permissions,
-            context=context,
+            context=agent_context,
             events=events,
             compaction=compaction,
             max_turns=profile.max_turns,
@@ -207,8 +320,18 @@ async def main(argv: list[str] | None = None) -> int:
             quiet=True,
         )
 
+    def report_unavailable(message: str) -> None:
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+
     subagents = SubagentManager(
-        create_subagent, profiles, events=events, tool_loader=mcp_manager.tools_for
+        create_subagent,
+        profiles,
+        events=events,
+        tool_loader=mcp_manager.tools_for,
+        report_unavailable=report_unavailable,
     )
     delegation_tools = [
         DelegationTool(profile.name, profile.description) for profile in profiles.values()

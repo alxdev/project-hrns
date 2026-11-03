@@ -22,8 +22,14 @@ class DelegationTool:
                 "properties": {
                     "task": {
                         "type": "string",
-                        "description": "The focused task to investigate or complete.",
-                    }
+                        "description": "The complete bounded outcome for this profile, including "
+                        "the user's requested scope, exact targets, inputs, constraints, and "
+                        "verification only as needed and proportional to establish the requested "
+                        "outcome, without extra deliverables or reporting requirements. "
+                        "Identify skills separately from callable tools. Keep "
+                        "ordinary intermediate discovery and harness approvals in this "
+                        "assignment; use discovery-only scope only when that is the outcome.",
+                    },
                 },
                 "required": ["task"],
             },

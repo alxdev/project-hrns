@@ -13,6 +13,8 @@ other interfaces can be added without changing the agent loop.
 - `src/harness/tools/` contains tool protocols and the registry; built-in
   implementations live in `src/harness/tools/handlers/`.
 - `tools.json` defines built-in tool metadata and handler mappings.
+- `.agents/skills/` contains portable project skills; `skills.json` registers
+  their catalog metadata and locations.
 - `subagents.json` defines the profiles available in this working directory.
 - `src/harness/subagents/` contains profiles, delegation, and lifecycle tracking.
 - `src/harness/commands/` contains interactive slash commands.
@@ -43,6 +45,10 @@ mypy src
   shell operations, subject to the active permission policy.
 - Tool failures should be represented as tool results so the model can react
   to them; do not hide failures by converting them into successful results.
+- Skill activation content must remain protected when conversation history is
+  compacted. Do not replace it with an abbreviated summary.
+- Keep user-authored tool artifacts outside the repository under
+  `~/.<harness-name>/tool-artifacts/`; never overwrite an existing artifact.
 - Use the configured `working_directory` for workspace files and commands.
 - Keep provider system prompts stable and preserve them when switching models.
 
