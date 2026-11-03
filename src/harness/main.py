@@ -332,6 +332,8 @@ async def main(argv: list[str] | None = None) -> int:
         events=events,
         tool_loader=mcp_manager.tools_for,
         report_unavailable=report_unavailable,
+        skill_catalog=skill_catalog,
+        mcp=mcp_manager,
     )
     delegation_tools = [
         DelegationTool(profile.name, profile.description) for profile in profiles.values()

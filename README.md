@@ -380,9 +380,14 @@ agent receives only profile-specific delegation tools while each subagent gets i
 own isolated agent instance, system prompt, permission mode, and curated
 `ToolRegistry`.
 
-Use `/agents` interactively to inspect agent descriptions, available tools, and delegation
-status. The main agent can delegate through `delegate_explorer` or
-`delegate_coder`.
+Use `/agents` interactively to inspect each profile's role, native tools, artifacts,
+assigned skills, MCP discovery state, and delegation status. The same generated
+capability summary is included in each root delegation tool's description and
+refreshes after saved access grants and runtime discovery. Summaries preserve lazy
+loading and distinguish assigned resources, requestable tools, and unknown or
+unavailable capabilities; they do not grant permission. Full child tool schemas
+and skill instructions stay with the child. The main agent can delegate through
+`delegate_explorer` or `delegate_coder`.
 
 ### Phase 6 — Streaming, cancellation, and richer UI foundations
 

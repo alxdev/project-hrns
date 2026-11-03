@@ -65,16 +65,18 @@ or locations:
 }
 ```
 
-A profile's `skills` array selects the child's catalog. The root receives no global
-skill inventory, but may name a user-provided skill explicitly in the delegation
-`task`. The child model selects and activates relevant assigned skills.
+A profile's `skills` array selects the child's catalog. Each root delegation tool
+includes the assigned skill names and concise catalog descriptions for routing;
+unassigned skills are excluded. The root may name a skill explicitly in the
+delegation `task`. The child model selects and activates relevant assigned skills.
 
 It calls `activate_skill` to load the full instructions, skill directory, and supporting
 file inventory. Successful activation adds a protected instruction message;
 repeated activation reuses it, and compaction preserves its complete content.
 Skills grant neither tools nor permissions, and an empty `skills` array permits
 no activation. The root orchestrator receives project `AGENTS.md` context
-rather than the subagent skill catalog.
+rather than full skill instructions. Capability summaries do not change either
+agent's system prompt.
 
 For `read_file`, an existing workspace path takes precedence. A missing relative
 path falls back to a unique readable file in assigned skill roots; multiple
@@ -139,7 +141,32 @@ assuming a missing capability; required skill steps must not be silently skipped
 ## Delegation
 
 The main agent receives one tool per profile, such as `delegate_explorer` or
-`delegate_coder`. Each tool accepts:
+`delegate_coder`. Its description is generated from current profile assignments,
+the skill catalog, and existing tool/MCP observations. The same summary appears
+in `/agents`, including:
+
+- The profile's role, native tools with concise descriptions, and controls such
+  as `list_available_tools`, `request_tool`, and `activate_skill` when installed
+  and assigned (including controls automatically added by profile loading).
+- Assigned artifacts and their last known state: undiscovered, last validated,
+  or unavailable. Unassigned native tools and already discovered artifacts are
+  labeled requestable only when `request_tool` is assigned.
+- Assigned skill names and descriptions, plus configured global and scoped MCP
+  servers, discovery status, and discovered MCP tool descriptions.
+
+Summaries never activate skills, load artifact manifests, or start MCP discovery.
+They expose neither child tool schemas nor full skill instructions. Availability
+is a last observation, not an execution or permission guarantee. Descriptions are
+bounded to 180 characters per resource; at most 12 unassigned resources and 12
+discovered MCP tools are shown, with explicit omitted counts for larger inventories.
+Assigned native tools, controls, artifacts, skills, and MCP servers remain listed.
+
+Descriptions refresh whenever the provider requests tool definitions, including
+after saved grants, artifact observations/replacements, or MCP discovery and
+configuration changes. Transient grants in a live child's registry are excluded
+from future-delegation summaries. No persistent memory is added.
+
+Each delegation tool still accepts only:
 
 ```json
 {
@@ -169,7 +196,7 @@ different UIs to show or ignore start, completion, and elapsed-time messages.
 
 `SubagentManager.describe()` reports configured profiles, active work, and the
 latest delegation records. The interactive `/agents` command displays them alongside
-the root and subagent descriptions and their available tools.
+the root's tools and the same capability summaries used for model routing.
 
 ## Tool ownership
 

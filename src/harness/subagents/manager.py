@@ -5,17 +5,23 @@ import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import replace
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from harness.agent import Agent
 from harness.agent.loop import EventSink, SubagentLifecycleEvent
 from harness.request_context import render_handoff
+from harness.skills import SkillCatalog
 from harness.tools.artifact_errors import InvalidArtifactError
 from harness.tools.artifacts import ArtifactTool
 from harness.tools.base import Tool
 
 from .base import Subagent
+from .capabilities import CapabilitySummary, build_capabilities, format_capabilities
 from .models import SubagentProfile, SubagentRecord, SubagentStatus
+
+if TYPE_CHECKING:
+    from harness.mcp import MCPToolManager
 
 AgentFactory = Callable[[SubagentProfile], Agent]
 ToolLoader = Callable[[str], Awaitable[Iterable[Tool]]]
@@ -50,6 +56,8 @@ class SubagentManager:
         events: EventSink | None = None,
         tool_loader: ToolLoader | None = None,
         report_unavailable: Callable[[str], None] | None = None,
+        skill_catalog: SkillCatalog | None = None,
+        mcp: MCPToolManager | None = None,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active must be at least 1")
@@ -59,6 +67,8 @@ class SubagentManager:
         self.events = events
         self.tool_loader = tool_loader
         self.report_unavailable = report_unavailable
+        self.skill_catalog = skill_catalog
+        self.mcp = mcp
         self._live_agents: dict[str, tuple[str, Agent]] = {}
         self._discovered_tools: dict[str, tuple[Tool, ...]] = {}
         self._records: list[SubagentRecord] = []
@@ -235,27 +245,38 @@ class SubagentManager:
                     removed += agent.tools.unregister(definition.name) is not None
         return removed
 
+    def capabilities(
+        self,
+        profile_name: str,
+        *,
+        mcp: MCPToolManager | None = None,
+    ) -> CapabilitySummary:
+        """Metadata for future delegations, without discovery or session grants."""
+        source = mcp if mcp is not None else self.mcp
+        servers: list[tuple[str, str, str]] = []
+        discovered = self._discovered_tools.get(profile_name, ())
+        if source is not None:
+            # The MCP cache filters current scope assignments, unlike past delegations.
+            discovered = source.cached_tools_for(profile_name)
+            servers = source.discovery_details(profile_name)
+        return build_capabilities(
+            self.profiles[profile_name], self.skill_catalog, discovered, servers
+        )
+
+    def capability_description(self, profile_name: str) -> str:
+        return format_capabilities(self.capabilities(profile_name))
+
     def describe(
         self,
-        extra_tools: Callable[[str], Iterable[Tool]] | None = None,
         leading_agents: Iterable[str] = (),
+        *,
+        mcp: MCPToolManager | None = None,
     ) -> str:
         agent_entries = list(leading_agents)
         if self.profiles:
-            for name, profile in sorted(self.profiles.items()):
-                tools = list(self.tools_for_profile(name))
-                if extra_tools is not None:
-                    known = {tool.definition.name for tool in tools}
-                    for tool in extra_tools(name):
-                        if tool.definition.name not in known:
-                            tools.append(tool)
-                            known.add(tool.definition.name)
-                tool_names = ", ".join(tool.definition.name for tool in tools) or "none"
-                agent_entries.append(
-                    f"  agent_{name} — {profile.description} — tools: {tool_names}"
-                )
-                for artifact, reason in profile.unavailable_artifacts.items():
-                    agent_entries.append(f"  unavailable artifact {artifact}: {reason}")
+            for name in sorted(self.profiles):
+                summary = format_capabilities(self.capabilities(name, mcp=mcp))
+                agent_entries.append(f"  agent_{name} — " + summary.replace("\n", "\n    "))
         else:
             agent_entries.append("  profiles: none")
         sections = ["Agents", *agent_entries, f"active: {len(self.active())}/{self.max_active}"]

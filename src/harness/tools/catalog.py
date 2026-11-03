@@ -28,7 +28,7 @@ class ToolCatalog(Mapping[str, Tool]):
         self._native = {tool.definition.name: tool for tool in tools}
         self.artifact_root = artifact_root.resolve()
         self._artifacts: dict[
-            str, tuple[tuple[object, ...], Tool | InvalidArtifactError | KeyError]
+            str, tuple[tuple[object, ...], Tool | ValueError | KeyError | OSError]
         ] = {}
         self._definitions: dict[str, tuple[ToolDefinition, ValueError | None]] = {}
 
@@ -36,6 +36,14 @@ class ToolCatalog(Mapping[str, Tool]):
     def native_tools(self) -> Mapping[str, Tool]:
         """Configured metadata, without artifact discovery or definition validation."""
         return self._native
+
+    def known_artifacts(self) -> Mapping[str, Tool | ValueError | KeyError | OSError]:
+        """Last observed outcomes, without discovery, stat calls, or validation.
+
+        These are observations, not guarantees that files still exist or are valid.
+        Normal artifact lookup remains responsible for freshness and validation.
+        """
+        return {name: result for name, (_signature, result) in self._artifacts.items()}
 
     def _signature(self, name: str) -> tuple[object, ...]:
         signature: list[object] = []
@@ -95,19 +103,28 @@ class ToolCatalog(Mapping[str, Tool]):
             return tool
         if not is_valid_artifact_name(name):
             raise KeyError(name)
-        signature = self._signature(name)
+        try:
+            signature = self._signature(name)
+        except OSError as exc:
+            # Retain the latest failure for metadata views; an empty signature
+            # forces normal lookup to retry rather than cache transient I/O errors.
+            self._artifacts[name] = ((), exc)
+            raise
         cached = self._artifacts.get(name)
         if cached is None or cached[0] != signature:
             try:
-                result: Tool | InvalidArtifactError | KeyError = load_artifact_tool(
+                result: Tool | ValueError | KeyError | OSError = load_artifact_tool(
                     self.artifact_root, name
                 )
             except (InvalidArtifactError, KeyError) as exc:
                 result = exc
+            except (OSError, ValueError) as exc:
+                self._artifacts[name] = ((), exc)
+                raise
             self._artifacts[name] = (signature, result)
         else:
             result = cached[1]
-        if isinstance(result, (InvalidArtifactError, KeyError)):
+        if isinstance(result, (ValueError, KeyError, OSError)):
             raise result
         return result
 

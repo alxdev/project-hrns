@@ -152,6 +152,7 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
     saved_note = "Access was saved" if kind == "artifact_authoring" else "also saved"
     assert (saved_note in acquisition["message"]) == saved
     assert (name in [t.definition.name for t in manager.tools_for_profile("lab")]) == saved
+    assert (f"{name} [assigned;" in delegation.definition.description) == saved
     assert name not in [t.definition.name for t in manager.tools_for_profile("other")]
     assert manager.profiles["lab"].system_prompt == "Test tools"
     assert bool(errors) == (outcome == "failed")

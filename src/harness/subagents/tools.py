@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from harness.api.types import ToolDefinition, ToolResult
@@ -37,7 +38,12 @@ class DelegationTool:
 
     @property
     def definition(self) -> ToolDefinition:
-        return self._definition
+        if self._manager is None or self.profile not in self._manager.profiles:
+            return self._definition
+        return replace(
+            self._definition,
+            description=self._manager.capability_description(self.profile),
+        )
 
     def bind(self, manager: SubagentManager) -> None:
         self._manager = manager

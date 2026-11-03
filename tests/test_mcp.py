@@ -400,6 +400,54 @@ async def test_subagent_discovers_tools_before_agent_factory():
     assert order == ["discover:explorer", "factory"]
 
 
+async def test_capability_summary_tracks_scoped_mcp_discovery_without_starting_it(tmp_path):
+    store = MCPConfigStore(tmp_path / "mcp.json")
+    store.add(MCPServerConfig("docs", "https://docs.example.com/mcp", "agent", "explorer"))
+    store.add(MCPServerConfig("shared", "https://shared.example.com/mcp", "global"))
+    store.add(MCPServerConfig("mail", "https://mail.example.com/mcp", "agent", "gmail"))
+    mcp = MCPToolManager(store, EventCollector())
+    mcp._client_factory = FakeClient
+    manager = SubagentManager(lambda _profile: None, {"explorer": profile("explorer")}, mcp=mcp)
+    delegation = DelegationTool("explorer", "Explore")
+    delegation.bind(manager)
+    registry = ToolRegistry([delegation])
+
+    initial = registry.definitions()[0]
+    assert "MCP server docs [agent; undiscovered]" in initial.description
+    assert "MCP server shared [global; undiscovered]" in initial.description
+    assert "mail" not in initial.description
+    assert not mcp._load_tasks
+
+    discovered = await mcp.tools_for("explorer")
+    loaded = registry.definitions()[0]
+    assert "MCP server docs [agent; loaded (1 tools)]" in loaded.description
+    assert "mcp_docs_search [assigned; discovered] — Search documents." in loaded.description
+    assert "mcp_shared_search [assigned; discovered]" in loaded.description
+    assert loaded.input_schema == initial.input_schema
+    assert "query" not in loaded.description
+    # Old delegation observations must not override current MCP configuration.
+    manager._discovered_tools["explorer"] = discovered
+    mcp.unregister("docs")
+    assert "mcp_docs_search" not in registry.definitions()[0].description
+    assert "mcp_shared_search" in registry.definitions()[0].description
+
+    class FailedClient(FakeClient):
+        async def list_tools(self):
+            raise RuntimeError("Connection unavailable")
+
+    mcp._client_factory = FailedClient
+    mcp.register(MCPServerConfig("failed", "https://failed.example.com/mcp", "global"))
+    with pytest.raises(RuntimeError, match="Connection unavailable"):
+        await mcp.tools_for("explorer")
+    description = registry.definitions()[0].description
+    assert "MCP server failed [global; unavailable (discovery failed:" in description
+    assert "Connection unavailable" in description
+    assert "mcp_failed_" not in description
+
+    store.path.write_text("invalid json")
+    assert "unavailable (configuration error)" in registry.definitions()[0].description
+
+
 def test_tools_and_agents_commands_show_scoped_mcp_tools_and_descriptions():
     profiles = {"explorer": profile("explorer", [read_file_tool()])}
     subagents = SubagentManager(lambda _profile: None, profiles)
@@ -410,6 +458,9 @@ def test_tools_and_agents_commands_show_scoped_mcp_tools_and_descriptions():
 
         def discovery_status(self, profile):
             return [("docs", "loaded (1 tools)")] if profile == "explorer" else []
+
+        def discovery_details(self, profile):
+            return [("docs", "agent", "loaded (1 tools)")] if profile == "explorer" else []
 
     context = CommandContext(
         agent=object(),
@@ -431,7 +482,9 @@ def test_tools_and_agents_commands_show_scoped_mcp_tools_and_descriptions():
     assert agents_result is not None
     assert "agent_root — Coordinates requests" in agents_result.text
     assert "agent_explorer — Investigate the codebase" in agents_result.text
-    assert "tools: read_file, mcp_docs_search" in agents_result.text
+    assert "native tool read_file [assigned; configured]" in agents_result.text
+    assert "MCP tool mcp_docs_search [assigned; discovered]" in agents_result.text
+    assert "MCP server docs [agent; loaded (1 tools)]" in agents_result.text
     assert "agent_root — Coordinates" in agents_result.text
     assert "\n\n  agent_explorer —" in agents_result.text
 

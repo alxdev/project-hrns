@@ -134,7 +134,6 @@ def _tools(_args: str, context: CommandContext) -> CommandResult:
 def _agents(_args: str, context: CommandContext) -> CommandResult:
     if context.subagents is None:
         return CommandResult("subagents are unavailable")
-    extra_tools = context.mcp.cached_tools_for if context.mcp is not None else None
     root_tool_names = (
         ", ".join(definition.name for definition in context.tools.definitions()) or "none"
     )
@@ -142,7 +141,7 @@ def _agents(_args: str, context: CommandContext) -> CommandResult:
         "  agent_root — Coordinates requests and delegates focused work to specialized agents. "
         f"— tools: {root_tool_names}"
     )
-    return CommandResult(context.subagents.describe(extra_tools, [root_entry]))
+    return CommandResult(context.subagents.describe([root_entry], mcp=context.mcp))
 
 
 def _mcp(args: str, context: CommandContext) -> CommandResult:
