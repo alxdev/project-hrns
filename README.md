@@ -389,6 +389,13 @@ unavailable capabilities; they do not grant permission. Full child tool schemas
 and skill instructions stay with the child. The main agent can delegate through
 `delegate_explorer` or `delegate_coder`.
 
+Delegation results use a versioned JSON envelope with the exact child response,
+run identity, lifecycle status, observed resource usage, and structured errors.
+The harness records runtime events without interpreting the child's claims;
+`verification_status` remains `not_assessed`, even when the child loop completes.
+See [structured outcomes](src/harness/subagents/README.md#structured-outcomes)
+for the schema and evidence limits.
+
 ### Phase 6 — Streaming, cancellation, and richer UI foundations
 
 - 6.1 completed: framework-neutral transcript state reduced from agent events

@@ -19,6 +19,8 @@ from harness.tools.base import Tool
 from .base import Subagent
 from .capabilities import CapabilitySummary, build_capabilities, format_capabilities
 from .models import SubagentProfile, SubagentRecord, SubagentStatus
+from .observations import InvocationObserver
+from .outcomes import capability_evidence, runtime_error
 
 if TYPE_CHECKING:
     from harness.mcp import MCPToolManager
@@ -120,17 +122,21 @@ class SubagentManager:
     def _active_agents(self, profile_name: str) -> tuple[Agent, ...]:
         return tuple(agent for name, agent in self._live_agents.values() if name == profile_name)
 
-    async def delegate(self, profile_name: str, prompt: str) -> SubagentRecord:
+    async def delegate(
+        self, profile_name: str, prompt: str, *, capture_errors: bool = False
+    ) -> SubagentRecord:
         profile = self.profiles.get(profile_name)
         if profile is None:
             available = ", ".join(sorted(self.profiles)) or "none"
             raise ValueError(f"unknown subagent '{profile_name}'; available: {available}")
-        return await self._run_profile(profile, prompt)
+        return await self._run_profile(profile, prompt, capture_errors=capture_errors)
 
     async def _run_profile(
         self,
         profile: SubagentProfile,
         prompt: str,
+        *,
+        capture_errors: bool = False,
     ) -> SubagentRecord:
         if not prompt.strip():
             raise ValueError("subagent prompt cannot be empty")
@@ -140,12 +146,19 @@ class SubagentManager:
         record = SubagentRecord(id=uuid4().hex[:8], profile=profile.name, prompt=prompt)
         self._records.append(record)
         started = time.monotonic()
+        stage = "initialization"
+        observer: InvocationObserver | None = None
+        agent: Agent | None = None
         try:
+            record.capabilities = capability_evidence(self.capabilities(profile.name), "configured")
+            stage = "lifecycle_start"
             await self._emit(SubagentLifecycleEvent(profile.name, record.id, "started"))
             notices: list[str] = []
+            stage = "discovery"
             discovered_tools = await self.tool_loader(profile.name) if self.tool_loader else ()
             # A save may have completed while discovery was awaiting I/O.
             profile = self.profiles[profile.name]
+            stage = "tool_resolution"
             profile = self._resolve_tools(profile)
             self._discovered_tools[profile.name] = tuple(discovered_tools)
             if profile.requires_tools and not (*profile.tools, *discovered_tools):
@@ -155,33 +168,67 @@ class SubagentManager:
                 )
             effective_profile = replace(profile, tools=(*profile.tools, *discovered_tools))
 
+            stage = "factory"
             agent = self.factory(effective_profile)
+            record.capabilities = capability_evidence(
+                self.capabilities(profile.name), "before_child_run"
+            )
+            if isinstance(agent, Agent):
+                observer = InvocationObserver(record, agent.events, agent.tools)
+                agent.events = observer
+            else:
+                record.resource_usage.observation_status = "unavailable"
 
             self._live_agents[record.id] = (profile.name, agent)
             if profile.unavailable_artifacts:
                 notices.extend(profile.unavailable_artifacts.values())
+            stage = "child"
             record.result = await agent.send(render_handoff(prompt, notices))
             record.status = SubagentStatus.COMPLETED
-            return record
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as exc:
             record.error = "cancelled"
             record.status = SubagentStatus.CANCELLED
+            runtime_error(record, stage, exc)
             raise
         except Exception as exc:
             record.error = str(exc)
             record.status = SubagentStatus.FAILED
-            raise
+            runtime_error(record, stage, exc)
+            if not capture_errors:
+                raise
         finally:
+            if observer is not None and agent is not None:
+                try:
+                    observer.observe_tools()
+                except Exception as exc:
+                    record.resource_usage.observation_status = "partial"
+                    runtime_error(record, "observation", exc)
+                finally:
+                    agent.events = observer.downstream
             self._live_agents.pop(record.id, None)
             record.completed_at = datetime.now()
-            await self._emit(
-                SubagentLifecycleEvent(
-                    profile.name,
-                    record.id,
-                    record.status.value,
-                    time.monotonic() - started,
+            try:
+                await self._emit(
+                    SubagentLifecycleEvent(
+                        profile.name,
+                        record.id,
+                        record.status.value,
+                        time.monotonic() - started,
+                    )
                 )
-            )
+            except asyncio.CancelledError as exc:
+                record.error = "cancelled"
+                record.status = SubagentStatus.CANCELLED
+                runtime_error(record, "lifecycle_end", exc)
+                raise
+            except Exception as exc:
+                runtime_error(record, "lifecycle_end", exc)
+                if record.status is not SubagentStatus.CANCELLED:
+                    record.error = str(exc)
+                    record.status = SubagentStatus.FAILED
+                    if not capture_errors:
+                        raise
+        return record
 
     def _resolve_tools(self, profile: SubagentProfile) -> SubagentProfile:
         catalog = profile.tool_catalog
