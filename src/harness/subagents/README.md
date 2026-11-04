@@ -164,7 +164,7 @@ Assigned native tools, controls, artifacts, skills, and MCP servers remain liste
 Descriptions refresh whenever the provider requests tool definitions, including
 after saved grants, artifact observations/replacements, or MCP discovery and
 configuration changes. Transient grants in a live child's registry are excluded
-from future-delegation summaries. No persistent memory is added.
+from future-delegation summaries. Capability summaries themselves add no persistent state.
 
 Each delegation tool still accepts only:
 
@@ -266,8 +266,9 @@ before discovery or the profile state immediately before the child runs.
 `SubagentManager.delegate()` continues to raise original runtime exceptions by
 default. Delegation tools use `capture_errors=True` to serialize failed run records;
 cancellation always propagates. The non-interactive JSON wrapper and provider types
-are unchanged. Outcomes remain in process only; no memory or result verification
-system is introduced.
+are unchanged. Outcomes remain in process; optional [experience memory](../memory/README.md)
+stores a bounded runtime projection with a separately labeled root assessment.
+No automatic task verification is introduced.
 
 Subagent lifecycle events are emitted through the generic event sink, allowing
 different UIs to show or ignore start, completion, and elapsed-time messages.

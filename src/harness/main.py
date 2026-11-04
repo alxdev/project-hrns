@@ -14,6 +14,14 @@ from harness.commands import CommandContext, build_default_commands
 from harness.compaction import CompactionManager
 from harness.config import HarnessConfig, parse_config
 from harness.mcp import MCPConfigStore, MCPToolManager
+from harness.memory import (
+    MemoryManager,
+    MemorySnapshot,
+    MemoryStore,
+    RecallExperience,
+    RecordExperience,
+    load_memory_config,
+)
 from harness.model_catalog import ModelCatalog, ModelChoice, build_provider_for_choice
 from harness.model_selection import MODEL_PICKER_EXIT, ModelOption
 from harness.orchestration import root_system_prompt
@@ -175,6 +183,15 @@ async def main(argv: list[str] | None = None) -> int:
             output.error(message)
         return 2
     artifact_root = config.data_directory / "tool-artifacts"
+    try:
+        memory_config = load_memory_config(config.working_directory / "memory.json")
+    except ValueError as exc:
+        message = f"invalid memory.json: {exc}"
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+        return 2
     tool_catalog = ToolCatalog(base_tools, artifact_root)
     if not config.non_interactive:
         permissions = AlwaysAsk(make_tool_execution_approver(approve_tool, base_tools))
@@ -334,6 +351,7 @@ async def main(argv: list[str] | None = None) -> int:
         report_unavailable=report_unavailable,
         skill_catalog=skill_catalog,
         mcp=mcp_manager,
+        working_directory=config.working_directory,
     )
     delegation_tools = [
         DelegationTool(profile.name, profile.description) for profile in profiles.values()
@@ -343,6 +361,15 @@ async def main(argv: list[str] | None = None) -> int:
     # Keep the root agent as a strict planner/router. Workspace inspection,
     # file writes, and shell execution are available only through subagents.
     registry = ToolRegistry(delegation_tools)
+    memory = MemoryManager(
+        memory_config, MemoryStore(config.data_directory, config.working_directory), subagents
+    )
+    memory_snapshot = None
+    if memory_config.enabled:
+        recall = RecallExperience(memory)
+        registry.register(recall)
+        registry.register(RecordExperience(memory))
+        memory_snapshot = MemorySnapshot(recall, registry)
 
     async def load_global_mcp_tools() -> None:
         for tool in await mcp_manager.tools_for("root"):
@@ -352,12 +379,21 @@ async def main(argv: list[str] | None = None) -> int:
     agent = Agent(
         provider=provider,
         tools=registry,
-        permissions=RoutedPermissionPolicy(root_permissions, {"mcp_": permissions}),
+        permissions=RoutedPermissionPolicy(
+            root_permissions,
+            {
+                "mcp_": permissions,
+                "record_experience": permissions
+                if memory_config.write_policy == "inherit"
+                else AlwaysDeny(),
+            },
+        ),
         context=context,
         events=events,
         compaction=compaction,
         name="root",
         before_send=load_global_mcp_tools,
+        after_tool_batch=memory_snapshot,
     )
 
     def select_model(identifier: str) -> str:
@@ -440,6 +476,7 @@ async def main(argv: list[str] | None = None) -> int:
         current_model_key=active_model_key,
         model_picker=pick_model,
         project_context=project_context,
+        memory=memory,
     )
     try:
         await InteractiveRunner(input_adapter, output, OperationController()).run(

@@ -146,6 +146,9 @@ class Agent:
     quiet: bool = False
     streaming: bool = True
     before_send: Callable[[], Awaitable[None]] | None = None
+    after_tool_batch: (
+        Callable[[list[Message], list[tuple[ToolCall, ToolResult]]], list[Message]] | None
+    ) = None
 
     def __post_init__(self) -> None:
         self.context = replace(self.context, tool_registry=self.tools)
@@ -263,6 +266,10 @@ class Agent:
                 )
             self.messages.append(Message(role="user", content=results))
             self.messages.extend(skill_context)
+            if self.after_tool_batch is not None:
+                self.messages = self.after_tool_batch(
+                    self.messages, list(zip(calls, results, strict=True))
+                )
             for activation in skill_context:
                 await self.events.emit(SkillActivatedEvent(activation.skill_name, self.name))
         raise RuntimeError(f"agent exceeded maximum turns ({self.max_turns})")

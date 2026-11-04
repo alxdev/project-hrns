@@ -5,6 +5,7 @@ import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import replace
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -60,6 +61,7 @@ class SubagentManager:
         report_unavailable: Callable[[str], None] | None = None,
         skill_catalog: SkillCatalog | None = None,
         mcp: MCPToolManager | None = None,
+        working_directory: Path | None = None,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active must be at least 1")
@@ -71,6 +73,7 @@ class SubagentManager:
         self.report_unavailable = report_unavailable
         self.skill_catalog = skill_catalog
         self.mcp = mcp
+        self.working_directory = working_directory.resolve() if working_directory else None
         self._live_agents: dict[str, tuple[str, Agent]] = {}
         self._discovered_tools: dict[str, tuple[Tool, ...]] = {}
         self._records: list[SubagentRecord] = []
@@ -143,7 +146,12 @@ class SubagentManager:
         if len(self.active()) >= self.max_active:
             raise RuntimeError(f"maximum active subagents reached ({self.max_active})")
 
-        record = SubagentRecord(id=uuid4().hex[:8], profile=profile.name, prompt=prompt)
+        record = SubagentRecord(
+            id=uuid4().hex[:8],
+            profile=profile.name,
+            prompt=prompt,
+            working_directory=self.working_directory,
+        )
         self._records.append(record)
         started = time.monotonic()
         stage = "initialization"
@@ -174,6 +182,7 @@ class SubagentManager:
                 self.capabilities(profile.name), "before_child_run"
             )
             if isinstance(agent, Agent):
+                record.working_directory = agent.context.working_directory.resolve()
                 observer = InvocationObserver(record, agent.events, agent.tools)
                 agent.events = observer
             else:
@@ -228,6 +237,8 @@ class SubagentManager:
                     record.status = SubagentStatus.FAILED
                     if not capture_errors:
                         raise
+            finally:
+                record.finalized = True
         return record
 
     def _resolve_tools(self, profile: SubagentProfile) -> SubagentProfile:

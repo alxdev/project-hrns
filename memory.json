@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "write_policy": "inherit",
+  "max_records": 200,
+  "max_recall_records": 5,
+  "recall_token_budget": 2000
+}

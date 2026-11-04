@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import shlex
 
 from harness.commands.registry import CommandContext, CommandRegistry, CommandResult
 from harness.mcp import MCPServerConfig, normalize_server_name, server_name_from_url
+from harness.memory.context import without_memory_snapshot
+from harness.memory.transactions import settle_write
 
 
 def build_default_commands() -> CommandRegistry:
@@ -18,6 +21,12 @@ def build_default_commands() -> CommandRegistry:
     registry.register("context", "Show loaded AGENTS.md project context.", _context)
     registry.register("tools", "List registered tools.", _tools)
     registry.register("agents", "List agents, descriptions, and available tools.", _agents)
+    registry.register(
+        "memory",
+        "Inspect or forget workspace experiences.",
+        _memory,
+        "/memory [status|list|show <id>|forget <id>|help]",
+    )
     registry.register(
         "mcp",
         "Register MCP tools for one subagent or all subagents.",
@@ -142,6 +151,47 @@ def _agents(_args: str, context: CommandContext) -> CommandResult:
         f"— tools: {root_tool_names}"
     )
     return CommandResult(context.subagents.describe([root_entry], mcp=context.mcp))
+
+
+def _memory(args: str, context: CommandContext) -> CommandResult:
+    if context.memory is None:
+        return CommandResult("experience memory is unavailable")
+    try:
+        parts = shlex.split(args)
+        if not parts or parts == ["status"]:
+            return CommandResult(context.memory.status())
+        if parts == ["help"]:
+            return CommandResult(
+                "/memory status | list | show <id> | forget <id>\n"
+                "Enable and configure limits/write policy in memory.json. "
+                "Stored assessments are advisory; current instructions and permissions win."
+            )
+        if parts == ["list"]:
+            return CommandResult(
+                json.dumps(context.memory.list_records(), ensure_ascii=False, indent=2)
+            )
+        if len(parts) == 2 and parts[0] == "show":
+            return CommandResult(
+                json.dumps(context.memory.show(parts[1]), ensure_ascii=False, indent=2)
+            )
+        if len(parts) == 2 and parts[0] == "forget":
+
+            async def forget() -> str:
+                def clear_snapshot(_removed: bool) -> None:
+                    context.agent.messages = without_memory_snapshot(context.agent.messages)
+
+                try:
+                    removed = await settle_write(
+                        lambda: context.memory.forget(parts[1]), clear_snapshot
+                    )
+                    return "experience forgotten" if removed else "experience not found"
+                except (ValueError, OSError) as exc:
+                    return str(exc)
+
+            return CommandResult(action=forget)
+        return CommandResult("usage: /memory [status|list|show <id>|forget <id>|help]")
+    except (ValueError, OSError) as exc:
+        return CommandResult(str(exc))
 
 
 def _mcp(args: str, context: CommandContext) -> CommandResult:

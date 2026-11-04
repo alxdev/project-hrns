@@ -21,6 +21,7 @@ class CommandContext:
     current_model_key: Callable[[], str | None] | None = None
     model_picker: Callable[[], Awaitable[str]] | None = None
     project_context: Any = None
+    memory: Any = None
 
 
 @dataclass(frozen=True)

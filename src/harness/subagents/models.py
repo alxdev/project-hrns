@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from harness.tools.base import Tool
@@ -81,3 +82,5 @@ class SubagentRecord:
     resource_usage: ResourceUsage = field(default_factory=ResourceUsage)
     errors: list[SubagentError] = field(default_factory=list)
     capabilities: CapabilityEvidence | None = None
+    finalized: bool = False
+    working_directory: Path | None = None
