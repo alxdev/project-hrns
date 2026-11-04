@@ -169,7 +169,10 @@ async def test_child_owns_real_discovery_access_approval_and_outcome(tmp_path, s
     if scenario != "discovery_only":
         assert "exact tool calculate with values [2, 3]" in task and "No writes." in task
     result = root_provider.calls[1][0][-1].content[0]
-    assert isinstance(result, ToolResult) and result.content.endswith(reports[scenario])
+    assert isinstance(result, ToolResult)
+    outcome = json.loads(result.content)
+    assert outcome["child_response"] == reports[scenario]
+    assert outcome["verification_status"] == "not_assessed"
     assert not result.is_error  # Lifecycle return is not a task-success verdict.
     assert not responses
     assert actions == ([{"values": [2, 3]}] if scenario == "complete" else [])

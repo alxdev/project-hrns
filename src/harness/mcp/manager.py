@@ -67,11 +67,15 @@ class MCPToolManager:
         return tuple(tools.values())
 
     def discovery_status(self, profile: str) -> list[tuple[str, str]]:
+        return [(name, status) for name, _scope, status in self.discovery_details(profile)]
+
+    def discovery_details(self, profile: str) -> list[tuple[str, str, str]]:
+        """Read configured scope and existing discovery state without starting I/O."""
         try:
             servers = [server for server in self.store.load() if server.applies_to(profile)]
         except ValueError as exc:
-            return [("mcp.json", f"configuration error: {exc}")]
-        statuses: list[tuple[str, str]] = []
+            return [("mcp.json", "configured", f"unavailable (configuration error): {exc}")]
+        statuses: list[tuple[str, str, str]] = []
         for server in servers:
             key = (server.name, server.url)
             task = self._load_tasks.get(key)
@@ -83,7 +87,7 @@ class MCPToolManager:
                 status = f"discovery failed: {self._server_errors[key]}"
             else:
                 status = f"loaded ({len(task.result())} tools)"
-            statuses.append((server.name, status))
+            statuses.append((server.name, server.scope, status))
         return statuses
 
     async def tools_for(self, profile: str) -> tuple[Tool, ...]:

@@ -76,7 +76,7 @@ async def test_refresh_recovers_assignments_for_fresh_handles_without_new_grants
     assert manager.profiles["transient"].tools == ()
     assert manager.profiles["transient"].tool_artifacts == ()
     assert manager.tools_for_profile("transient") == ()
-    assert "tools: helper" in manager.describe()
+    assert "artifact helper [assigned; last validated]" in manager.describe()
     assert created["other"].tools.get("helper") is None
     assert manager.profiles["other"].tools == ()
     assert "Broken manifest" not in manager.describe()
@@ -491,7 +491,7 @@ async def test_refresh_updates_live_agents_and_reports_only_active_session_acces
         manager.refresh_artifact_access(new)
         assert created[0].tools.get("helper") is new
         assert manager.tools_for_profile("lab") == (new,)
-        assert "tools: helper" in manager.describe()
+        assert ("artifact helper [assigned; last validated]" in manager.describe()) is assigned
         assert bool(manager.profiles["lab"].tools) is assigned
         assert bool(manager.profiles["lab"].tool_artifacts) is assigned
     finally:

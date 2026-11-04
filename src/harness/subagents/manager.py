@@ -5,17 +5,26 @@ import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import replace
 from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from harness.agent import Agent
 from harness.agent.loop import EventSink, SubagentLifecycleEvent
 from harness.request_context import render_handoff
+from harness.skills import SkillCatalog
 from harness.tools.artifact_errors import InvalidArtifactError
 from harness.tools.artifacts import ArtifactTool
 from harness.tools.base import Tool
 
 from .base import Subagent
+from .capabilities import CapabilitySummary, build_capabilities, format_capabilities
 from .models import SubagentProfile, SubagentRecord, SubagentStatus
+from .observations import InvocationObserver
+from .outcomes import capability_evidence, runtime_error
+
+if TYPE_CHECKING:
+    from harness.mcp import MCPToolManager
 
 AgentFactory = Callable[[SubagentProfile], Agent]
 ToolLoader = Callable[[str], Awaitable[Iterable[Tool]]]
@@ -50,6 +59,9 @@ class SubagentManager:
         events: EventSink | None = None,
         tool_loader: ToolLoader | None = None,
         report_unavailable: Callable[[str], None] | None = None,
+        skill_catalog: SkillCatalog | None = None,
+        mcp: MCPToolManager | None = None,
+        working_directory: Path | None = None,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active must be at least 1")
@@ -59,6 +71,9 @@ class SubagentManager:
         self.events = events
         self.tool_loader = tool_loader
         self.report_unavailable = report_unavailable
+        self.skill_catalog = skill_catalog
+        self.mcp = mcp
+        self.working_directory = working_directory.resolve() if working_directory else None
         self._live_agents: dict[str, tuple[str, Agent]] = {}
         self._discovered_tools: dict[str, tuple[Tool, ...]] = {}
         self._records: list[SubagentRecord] = []
@@ -110,32 +125,48 @@ class SubagentManager:
     def _active_agents(self, profile_name: str) -> tuple[Agent, ...]:
         return tuple(agent for name, agent in self._live_agents.values() if name == profile_name)
 
-    async def delegate(self, profile_name: str, prompt: str) -> SubagentRecord:
+    async def delegate(
+        self, profile_name: str, prompt: str, *, capture_errors: bool = False
+    ) -> SubagentRecord:
         profile = self.profiles.get(profile_name)
         if profile is None:
             available = ", ".join(sorted(self.profiles)) or "none"
             raise ValueError(f"unknown subagent '{profile_name}'; available: {available}")
-        return await self._run_profile(profile, prompt)
+        return await self._run_profile(profile, prompt, capture_errors=capture_errors)
 
     async def _run_profile(
         self,
         profile: SubagentProfile,
         prompt: str,
+        *,
+        capture_errors: bool = False,
     ) -> SubagentRecord:
         if not prompt.strip():
             raise ValueError("subagent prompt cannot be empty")
         if len(self.active()) >= self.max_active:
             raise RuntimeError(f"maximum active subagents reached ({self.max_active})")
 
-        record = SubagentRecord(id=uuid4().hex[:8], profile=profile.name, prompt=prompt)
+        record = SubagentRecord(
+            id=uuid4().hex[:8],
+            profile=profile.name,
+            prompt=prompt,
+            working_directory=self.working_directory,
+        )
         self._records.append(record)
         started = time.monotonic()
+        stage = "initialization"
+        observer: InvocationObserver | None = None
+        agent: Agent | None = None
         try:
+            record.capabilities = capability_evidence(self.capabilities(profile.name), "configured")
+            stage = "lifecycle_start"
             await self._emit(SubagentLifecycleEvent(profile.name, record.id, "started"))
             notices: list[str] = []
+            stage = "discovery"
             discovered_tools = await self.tool_loader(profile.name) if self.tool_loader else ()
             # A save may have completed while discovery was awaiting I/O.
             profile = self.profiles[profile.name]
+            stage = "tool_resolution"
             profile = self._resolve_tools(profile)
             self._discovered_tools[profile.name] = tuple(discovered_tools)
             if profile.requires_tools and not (*profile.tools, *discovered_tools):
@@ -145,33 +176,70 @@ class SubagentManager:
                 )
             effective_profile = replace(profile, tools=(*profile.tools, *discovered_tools))
 
+            stage = "factory"
             agent = self.factory(effective_profile)
+            record.capabilities = capability_evidence(
+                self.capabilities(profile.name), "before_child_run"
+            )
+            if isinstance(agent, Agent):
+                record.working_directory = agent.context.working_directory.resolve()
+                observer = InvocationObserver(record, agent.events, agent.tools)
+                agent.events = observer
+            else:
+                record.resource_usage.observation_status = "unavailable"
 
             self._live_agents[record.id] = (profile.name, agent)
             if profile.unavailable_artifacts:
                 notices.extend(profile.unavailable_artifacts.values())
+            stage = "child"
             record.result = await agent.send(render_handoff(prompt, notices))
             record.status = SubagentStatus.COMPLETED
-            return record
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as exc:
             record.error = "cancelled"
             record.status = SubagentStatus.CANCELLED
+            runtime_error(record, stage, exc)
             raise
         except Exception as exc:
             record.error = str(exc)
             record.status = SubagentStatus.FAILED
-            raise
+            runtime_error(record, stage, exc)
+            if not capture_errors:
+                raise
         finally:
+            if observer is not None and agent is not None:
+                try:
+                    observer.observe_tools()
+                except Exception as exc:
+                    record.resource_usage.observation_status = "partial"
+                    runtime_error(record, "observation", exc)
+                finally:
+                    agent.events = observer.downstream
             self._live_agents.pop(record.id, None)
             record.completed_at = datetime.now()
-            await self._emit(
-                SubagentLifecycleEvent(
-                    profile.name,
-                    record.id,
-                    record.status.value,
-                    time.monotonic() - started,
+            try:
+                await self._emit(
+                    SubagentLifecycleEvent(
+                        profile.name,
+                        record.id,
+                        record.status.value,
+                        time.monotonic() - started,
+                    )
                 )
-            )
+            except asyncio.CancelledError as exc:
+                record.error = "cancelled"
+                record.status = SubagentStatus.CANCELLED
+                runtime_error(record, "lifecycle_end", exc)
+                raise
+            except Exception as exc:
+                runtime_error(record, "lifecycle_end", exc)
+                if record.status is not SubagentStatus.CANCELLED:
+                    record.error = str(exc)
+                    record.status = SubagentStatus.FAILED
+                    if not capture_errors:
+                        raise
+            finally:
+                record.finalized = True
+        return record
 
     def _resolve_tools(self, profile: SubagentProfile) -> SubagentProfile:
         catalog = profile.tool_catalog
@@ -235,27 +303,38 @@ class SubagentManager:
                     removed += agent.tools.unregister(definition.name) is not None
         return removed
 
+    def capabilities(
+        self,
+        profile_name: str,
+        *,
+        mcp: MCPToolManager | None = None,
+    ) -> CapabilitySummary:
+        """Metadata for future delegations, without discovery or session grants."""
+        source = mcp if mcp is not None else self.mcp
+        servers: list[tuple[str, str, str]] = []
+        discovered = self._discovered_tools.get(profile_name, ())
+        if source is not None:
+            # The MCP cache filters current scope assignments, unlike past delegations.
+            discovered = source.cached_tools_for(profile_name)
+            servers = source.discovery_details(profile_name)
+        return build_capabilities(
+            self.profiles[profile_name], self.skill_catalog, discovered, servers
+        )
+
+    def capability_description(self, profile_name: str) -> str:
+        return format_capabilities(self.capabilities(profile_name))
+
     def describe(
         self,
-        extra_tools: Callable[[str], Iterable[Tool]] | None = None,
         leading_agents: Iterable[str] = (),
+        *,
+        mcp: MCPToolManager | None = None,
     ) -> str:
         agent_entries = list(leading_agents)
         if self.profiles:
-            for name, profile in sorted(self.profiles.items()):
-                tools = list(self.tools_for_profile(name))
-                if extra_tools is not None:
-                    known = {tool.definition.name for tool in tools}
-                    for tool in extra_tools(name):
-                        if tool.definition.name not in known:
-                            tools.append(tool)
-                            known.add(tool.definition.name)
-                tool_names = ", ".join(tool.definition.name for tool in tools) or "none"
-                agent_entries.append(
-                    f"  agent_{name} — {profile.description} — tools: {tool_names}"
-                )
-                for artifact, reason in profile.unavailable_artifacts.items():
-                    agent_entries.append(f"  unavailable artifact {artifact}: {reason}")
+            for name in sorted(self.profiles):
+                summary = format_capabilities(self.capabilities(name, mcp=mcp))
+                agent_entries.append(f"  agent_{name} — " + summary.replace("\n", "\n    "))
         else:
             agent_entries.append("  profiles: none")
         sections = ["Agents", *agent_entries, f"active: {len(self.active())}/{self.max_active}"]

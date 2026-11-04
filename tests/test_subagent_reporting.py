@@ -162,6 +162,17 @@ async def test_delegated_loop_returns_final_output_or_failure_facts(
     assert manager.records()[0].result == report
     result = root_provider.calls[1][0][-1].content[0]
     assert isinstance(result, ToolResult)
-    assert result.content.endswith(report)
+    outcome = json.loads(result.content)
+    assert outcome["schema_version"] == 1
+    assert outcome["child_response"] == report
+    assert outcome["run_id"] == manager.records()[0].id
+    assert outcome["objective"] == "Acquire, execute, report"
+    assert outcome["lifecycle_status"] == "completed"
+    assert outcome["verification_status"] == "not_assessed"
+    usage = {item["name"]: item for item in outcome["resource_usage"]["tools"]}
+    assert usage["execute"]["execution_started"] == 1
+    assert usage["execute"]["returned_error"] == int(is_error)
+    assert usage["execute"]["returned_success"] == int(not is_error)
+    assert bool(outcome["errors"]) == is_error
     # A model reporting a blocker is still an ordinary final response to the manager.
     assert not result.is_error

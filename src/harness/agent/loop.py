@@ -81,6 +81,22 @@ class ToolExecutionEvent:
 
 
 @dataclass(frozen=True)
+class ToolPermissionDeniedEvent:
+    name: str
+    tool_call_id: str
+    agent: str = ""
+    log_prefix: str = ""
+
+
+@dataclass(frozen=True)
+class SkillActivatedEvent:
+    """Emitted only after new protected skill instructions enter agent context."""
+
+    name: str
+    agent: str = ""
+
+
+@dataclass(frozen=True)
 class ToolResultEvent:
     name: str
     result: ToolResult
@@ -130,6 +146,9 @@ class Agent:
     quiet: bool = False
     streaming: bool = True
     before_send: Callable[[], Awaitable[None]] | None = None
+    after_tool_batch: (
+        Callable[[list[Message], list[tuple[ToolCall, ToolResult]]], list[Message]] | None
+    ) = None
 
     def __post_init__(self) -> None:
         self.context = replace(self.context, tool_registry=self.tools)
@@ -191,6 +210,9 @@ class Agent:
                 )
                 decision = await self.permissions.decide(definition, call.input)
                 if decision is PermissionDecision.DENY:
+                    await self.events.emit(
+                        ToolPermissionDeniedEvent(call.name, call.id, self.name, self.log_prefix)
+                    )
                     result = capability_result(
                         "access_denied",
                         "user denied this tool call",
@@ -244,6 +266,12 @@ class Agent:
                 )
             self.messages.append(Message(role="user", content=results))
             self.messages.extend(skill_context)
+            if self.after_tool_batch is not None:
+                self.messages = self.after_tool_batch(
+                    self.messages, list(zip(calls, results, strict=True))
+                )
+            for activation in skill_context:
+                await self.events.emit(SkillActivatedEvent(activation.skill_name, self.name))
         raise RuntimeError(f"agent exceeded maximum turns ({self.max_turns})")
 
     async def _request_response(self, assignment: Message) -> tuple[ProviderResponse, bool]:

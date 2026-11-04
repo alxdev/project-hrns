@@ -380,9 +380,29 @@ agent receives only profile-specific delegation tools while each subagent gets i
 own isolated agent instance, system prompt, permission mode, and curated
 `ToolRegistry`.
 
-Use `/agents` interactively to inspect agent descriptions, available tools, and delegation
-status. The main agent can delegate through `delegate_explorer` or
-`delegate_coder`.
+Use `/agents` interactively to inspect each profile's role, native tools, artifacts,
+assigned skills, MCP discovery state, and delegation status. The same generated
+capability summary is included in each root delegation tool's description and
+refreshes after saved access grants and runtime discovery. Summaries preserve lazy
+loading and distinguish assigned resources, requestable tools, and unknown or
+unavailable capabilities; they do not grant permission. Full child tool schemas
+and skill instructions stay with the child. The main agent can delegate through
+`delegate_explorer` or `delegate_coder`.
+
+Delegation results use a versioned JSON envelope with the exact child response,
+run identity, lifecycle status, observed resource usage, and structured errors.
+The harness records runtime events without interpreting the child's claims;
+`verification_status` remains `not_assessed`, even when the child loop completes.
+See [structured outcomes](src/harness/subagents/README.md#structured-outcomes)
+for the schema and evidence limits.
+
+Optional experience memory adds root-only recall and recording of bounded
+delegation evidence, root assessments, and lessons. It is disabled by default;
+set `"enabled": true` in `memory.json` and restart to enable it. Writes inherit
+execution permissions, so non-interactive recording requires `--allow-tools`.
+Use `/memory status`, `/memory list`, `/memory show <id>`, and `/memory forget <id>`
+to inspect or remove records. See [experience memory](src/harness/memory/README.md)
+for storage, evidence boundaries, budgets, and cancellation semantics.
 
 ### Phase 6 — Streaming, cancellation, and richer UI foundations
 

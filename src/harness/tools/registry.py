@@ -25,6 +25,10 @@ class ToolRegistry:
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
 
+    def names(self) -> tuple[str, ...]:
+        """Registered names without re-evaluating dynamic tool definitions."""
+        return tuple(sorted(self._tools))
+
     def definitions(self) -> list[ToolDefinition]:
         return [self._tools[name].definition for name in sorted(self._tools)]
 

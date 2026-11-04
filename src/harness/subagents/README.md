@@ -65,16 +65,18 @@ or locations:
 }
 ```
 
-A profile's `skills` array selects the child's catalog. The root receives no global
-skill inventory, but may name a user-provided skill explicitly in the delegation
-`task`. The child model selects and activates relevant assigned skills.
+A profile's `skills` array selects the child's catalog. Each root delegation tool
+includes the assigned skill names and concise catalog descriptions for routing;
+unassigned skills are excluded. The root may name a skill explicitly in the
+delegation `task`. The child model selects and activates relevant assigned skills.
 
 It calls `activate_skill` to load the full instructions, skill directory, and supporting
 file inventory. Successful activation adds a protected instruction message;
 repeated activation reuses it, and compaction preserves its complete content.
 Skills grant neither tools nor permissions, and an empty `skills` array permits
 no activation. The root orchestrator receives project `AGENTS.md` context
-rather than the subagent skill catalog.
+rather than full skill instructions. Capability summaries do not change either
+agent's system prompt.
 
 For `read_file`, an existing workspace path takes precedence. A missing relative
 path falls back to a unique readable file in assigned skill roots; multiple
@@ -139,7 +141,32 @@ assuming a missing capability; required skill steps must not be silently skipped
 ## Delegation
 
 The main agent receives one tool per profile, such as `delegate_explorer` or
-`delegate_coder`. Each tool accepts:
+`delegate_coder`. Its description is generated from current profile assignments,
+the skill catalog, and existing tool/MCP observations. The same summary appears
+in `/agents`, including:
+
+- The profile's role, native tools with concise descriptions, and controls such
+  as `list_available_tools`, `request_tool`, and `activate_skill` when installed
+  and assigned (including controls automatically added by profile loading).
+- Assigned artifacts and their last known state: undiscovered, last validated,
+  or unavailable. Unassigned native tools and already discovered artifacts are
+  labeled requestable only when `request_tool` is assigned.
+- Assigned skill names and descriptions, plus configured global and scoped MCP
+  servers, discovery status, and discovered MCP tool descriptions.
+
+Summaries never activate skills, load artifact manifests, or start MCP discovery.
+They expose neither child tool schemas nor full skill instructions. Availability
+is a last observation, not an execution or permission guarantee. Descriptions are
+bounded to 180 characters per resource; at most 12 unassigned resources and 12
+discovered MCP tools are shown, with explicit omitted counts for larger inventories.
+Assigned native tools, controls, artifacts, skills, and MCP servers remain listed.
+
+Descriptions refresh whenever the provider requests tool definitions, including
+after saved grants, artifact observations/replacements, or MCP discovery and
+configuration changes. Transient grants in a live child's registry are excluded
+from future-delegation summaries. Capability summaries themselves add no persistent state.
+
+Each delegation tool still accepts only:
 
 ```json
 {
@@ -164,12 +191,91 @@ execution approval, and file safety checks still apply as described below and in
 
 Each delegation receives a tracking ID and a completed or failed status.
 
+### Structured outcomes
+
+Delegation tools return a versioned JSON object in `ToolResult.content`. The
+input remains `{"task": "..."}`. A successful return has this shape:
+
+```json
+{
+  "schema_version": 1,
+  "run_id": "a1b2c3d4",
+  "profile": "analyst",
+  "objective": "Summarize the assigned report.",
+  "lifecycle_status": "completed",
+  "child_response": "The report describes three findings...",
+  "verification_status": "not_assessed",
+  "resource_usage": {
+    "observation_status": "observed",
+    "tools": [],
+    "tools_omitted": 0,
+    "skills_activated": [],
+    "skills_omitted": 0,
+    "tools_added": [],
+    "tools_added_omitted": 0
+  },
+  "errors": [],
+  "errors_omitted": 0,
+  "capabilities": {
+    "fingerprint": "sha256:...",
+    "stage": "before_child_run",
+    "resources": [],
+    "resources_omitted": 0
+  }
+}
+```
+
+`child_response` preserves the child's returned text exactly, including an empty
+response or a reported blocker. It is a model report, not harness-verified evidence.
+`completed` means the child loop returned; it does not establish task success.
+`verification_status` is always `not_assessed` in this version. Tool failures may
+therefore appear in a completed run's evidence without making the delegation itself
+an error. A failed run has `ToolResult.is_error=true`, its run ID, and structured
+errors; preflight rejections such as an unknown profile or empty task have
+`run_id=null` because no run began.
+
+An observer bound to each child invocation forwards the original events unchanged
+while recording runtime evidence independently of profile names and tool-call IDs.
+Each tool entry contains `name`, `requested`, `execution_started`, `returned_success`,
+`returned_error`, and `permission_denied` counts. Execution-start means dispatch
+into the tool registry, including unknown-tool and validation failures; it does not
+prove that an external operation occurred. Policy denials are counted from a trusted
+permission event, while handler errors are counted from `ToolResult.is_error`.
+The harness does not parse model claims or tool output to infer these facts.
+
+`skills_activated` counts only successful insertion of new protected skill context.
+Repeated activation reuses existing instructions and adds no activation count;
+failed, denied, or buffered-but-never-inserted activations do not count.
+`tools_added` records observed additions to the invocation registry. Its
+`persistence` is `not_assessed`; an addition alone does not prove access was saved.
+Cancellation propagates as `CancelledError`, preserves partial evidence in the run
+record, restores the original event sink, and clears live tracking. Historical
+activation evidence records an insertion even if cancellation later rolls back
+the invocation's conversation messages.
+
+Resource evidence contains names, counts, and statuses, excluding tool arguments,
+raw results, and skill instructions. Each resource list and capability snapshot
+is limited to 64 entries; errors are limited to 20 entries, prioritizing run-level
+failures. Explicit omitted counts distinguish truncation from completeness.
+Repeated identical errors aggregate their count. Runtime exception messages are
+limited to 500 characters; tool-error entries contain no raw output.
+The deterministic capability fingerprint covers the full sorted capability metadata,
+even when the visible snapshot is truncated. Its stage identifies configuration
+before discovery or the profile state immediately before the child runs.
+
+`SubagentManager.delegate()` continues to raise original runtime exceptions by
+default. Delegation tools use `capture_errors=True` to serialize failed run records;
+cancellation always propagates. The non-interactive JSON wrapper and provider types
+are unchanged. Outcomes remain in process; optional [experience memory](../memory/README.md)
+stores a bounded runtime projection with a separately labeled root assessment.
+No automatic task verification is introduced.
+
 Subagent lifecycle events are emitted through the generic event sink, allowing
 different UIs to show or ignore start, completion, and elapsed-time messages.
 
 `SubagentManager.describe()` reports configured profiles, active work, and the
 latest delegation records. The interactive `/agents` command displays them alongside
-the root and subagent descriptions and their available tools.
+the root's tools and the same capability summaries used for model routing.
 
 ## Tool ownership
 

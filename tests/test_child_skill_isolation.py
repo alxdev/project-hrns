@@ -88,6 +88,13 @@ async def test_noninteractive_skill_catalog_is_child_only_with_unchanged_task_ha
     assert "PRIVATE BODY" not in child.system
     assert child.calls[0][0][-1].content[0].text == "Focused assigned task:\n" + task
     schema = root.calls[0][1][0].input_schema
+    descriptions = {definition.name: definition.description for definition in root.calls[0][1]}
+    assert (
+        "skill shared [assigned; cataloged] — Shared analysis workflow"
+        in descriptions["delegate_alpha"]
+    )
+    assert "Review workflow" not in descriptions["delegate_alpha"]
+    assert "PRIVATE BODY" not in str(descriptions)
     assert schema["required"] == ["task"] and set(schema["properties"]) == {"task"}
     assert "Actual child result" in str(root.calls[1][0])
     assert len(root.calls) == 2 and len(child.calls) == 1
