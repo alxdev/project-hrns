@@ -1,0 +1,14 @@
+{
+  "tools": [
+    "delegate_skill-lab",
+    "delegate_explorer",
+    "delegate_coder",
+    "delegate_gmail",
+    "recall_experience",
+    "record_experience",
+    "activate_skill"
+  ],
+  "skills": [],
+  "mcp_servers": ["*"],
+  "max_turns": 20
+}

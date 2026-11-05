@@ -22,6 +22,7 @@ class CommandContext:
     model_picker: Callable[[], Awaitable[str]] | None = None
     project_context: Any = None
     memory: Any = None
+    orchestrator: Any = None
 
 
 @dataclass(frozen=True)

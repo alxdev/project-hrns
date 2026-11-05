@@ -112,6 +112,8 @@ def _tools(_args: str, context: CommandContext) -> CommandResult:
     sections: list[str] = []
     root_definitions = context.tools.definitions()
     root_entries = [f"  {item.name} — {item.description}" for item in root_definitions]
+    if context.orchestrator is not None:
+        root_entries.append(f"  {context.orchestrator.describe()}")
     if context.mcp is not None:
         root_entries.extend(
             f"  MCP {server}: {status}" for server, status in context.mcp.discovery_status("root")
@@ -150,6 +152,8 @@ def _agents(_args: str, context: CommandContext) -> CommandResult:
         "  agent_root — Coordinates requests and delegates focused work to specialized agents. "
         f"— tools: {root_tool_names}"
     )
+    if context.orchestrator is not None:
+        root_entry += f" — {context.orchestrator.describe()}"
     return CommandResult(context.subagents.describe([root_entry], mcp=context.mcp))
 
 

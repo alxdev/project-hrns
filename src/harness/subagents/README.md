@@ -74,9 +74,11 @@ It calls `activate_skill` to load the full instructions, skill directory, and su
 file inventory. Successful activation adds a protected instruction message;
 repeated activation reuses it, and compaction preserves its complete content.
 Skills grant neither tools nor permissions, and an empty `skills` array permits
-no activation. The root orchestrator receives project `AGENTS.md` context
-rather than full skill instructions. Capability summaries do not change either
-agent's system prompt.
+no activation. The root receives project `AGENTS.md` context and may have its own
+independent skill assignment in `orchestrator.json`; root activation requires an
+explicit `activate_skill` tool and follows the execution policy. Full child skill
+instructions are not automatically shared with root. Capability summaries do not
+change either agent's system prompt.
 
 For `read_file`, an existing workspace path takes precedence. A missing relative
 path falls back to a unique readable file in assigned skill roots; multiple
@@ -279,8 +281,9 @@ the root's tools and the same capability summaries used for model routing.
 
 ## Tool ownership
 
-The root agent is intentionally restricted to delegation tools. It cannot call
-`read_file`, `write_file`, or `bash` directly. This enforces a strict planner /
+The root's `orchestrator.json` selects delegation, memory, and skill-activation
+controls plus an MCP server allowlist. It cannot call native `read_file`,
+`write_file`, or `bash` directly. This enforces a strict planner /
 executor boundary:
 
 - `explorer` may use `read_file` for read-only investigation.
@@ -386,7 +389,8 @@ For adding native Python handlers to the harness itself, see
 MCP servers can be assigned to one profile or made global with `/mcp add`.
 Profile-scoped tools are discovered synchronously before the profile's first
 agent loop, then cached for the session. Global tools are discovered before the
-root agent's first loop and are also included for subagents. Discovery activity
+root agent's first loop only when admitted by its `orchestrator.json` MCP allowlist,
+and are also included for subagents according to `mcp.json`. Discovery activity
 is emitted through the generic event sink; the UI shows the current server and
 logs the resulting tool count or the server's error. MCP tools use the same
 registry, permission policy, and cancellation path as built-in tools.

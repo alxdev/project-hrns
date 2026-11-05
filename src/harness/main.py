@@ -25,6 +25,7 @@ from harness.memory import (
 from harness.model_catalog import ModelCatalog, ModelChoice, build_provider_for_choice
 from harness.model_selection import MODEL_PICKER_EXIT, ModelOption
 from harness.orchestration import root_system_prompt
+from harness.orchestrator import load_orchestrator
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
 from harness.project_context import ProjectContext, load_project_context
 from harness.provider import (
@@ -218,6 +219,25 @@ async def main(argv: list[str] | None = None) -> int:
             output.error(message)
         return 2
 
+    try:
+        orchestrator = load_orchestrator(
+            config.working_directory / "orchestrator.json",
+            delegation_names=(f"delegate_{name}" for name in profiles),
+            native_tools=base_tools,
+            skills=skill_catalog,
+            memory_enabled=memory_config.enabled,
+        )
+    except ValueError as exc:
+        message = f"invalid orchestrator.json: {exc}"
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+        return 2
+    root_skills = skill_catalog.for_names(orchestrator.skills)
+    if orchestrator.skills:
+        provider.system = provider.system.rstrip() + "\n\n" + root_skills.catalog_prompt()
+
     async def prompt_mcp_secret(variable: str) -> str:
         if input_adapter is None or output is None:
             raise ValueError(
@@ -231,6 +251,7 @@ async def main(argv: list[str] | None = None) -> int:
         MCPConfigStore(config.working_directory / "mcp.json"),
         events,
         prompt_secret=prompt_mcp_secret if input_adapter is not None else None,
+        server_allowlists={"root": orchestrator.mcp_servers},
     )
     context = ToolContext(config.working_directory)
 
@@ -354,7 +375,9 @@ async def main(argv: list[str] | None = None) -> int:
         working_directory=config.working_directory,
     )
     delegation_tools = [
-        DelegationTool(profile.name, profile.description) for profile in profiles.values()
+        DelegationTool(profile.name, profile.description)
+        for profile in profiles.values()
+        if f"delegate_{profile.name}" in orchestrator.active_tools
     ]
     for delegation_tool in delegation_tools:
         delegation_tool.bind(subagents)
@@ -365,15 +388,33 @@ async def main(argv: list[str] | None = None) -> int:
         memory_config, MemoryStore(config.data_directory, config.working_directory), subagents
     )
     memory_snapshot = None
-    if memory_config.enabled:
+    if "recall_experience" in orchestrator.active_tools:
         recall = RecallExperience(memory)
         registry.register(recall)
-        registry.register(RecordExperience(memory))
         memory_snapshot = MemorySnapshot(recall, registry)
+    if "record_experience" in orchestrator.active_tools:
+        registry.register(RecordExperience(memory))
+    if "activate_skill" in orchestrator.active_tools:
+        registry.register(
+            next(tool for tool in base_tools if tool.definition.name == "activate_skill")
+        )
+    root_context = replace(
+        context,
+        skill_catalog=root_skills,
+        allowed_skills=orchestrator.skills,
+        allowed_read_roots=tuple(skill.root for skill in root_skills.skills.values()),
+        tool_registry=registry,
+    )
 
     async def load_global_mcp_tools() -> None:
-        for tool in await mcp_manager.tools_for("root"):
-            if not any(item.name == tool.definition.name for item in registry.definitions()):
+        tools = await mcp_manager.tools_for("root")
+        names = {tool.definition.name for tool in tools}
+        for name in registry.names():
+            if name.startswith("mcp_") and name not in names:
+                registry.unregister(name)
+        for tool in tools:
+            if registry.get(tool.definition.name) is not tool:
+                registry.unregister(tool.definition.name)
                 registry.register(tool)
 
     agent = Agent(
@@ -383,15 +424,17 @@ async def main(argv: list[str] | None = None) -> int:
             root_permissions,
             {
                 "mcp_": permissions,
+                "activate_skill": permissions,
                 "record_experience": permissions
                 if memory_config.write_policy == "inherit"
                 else AlwaysDeny(),
             },
         ),
-        context=context,
+        context=root_context,
         events=events,
         compaction=compaction,
         name="root",
+        max_turns=orchestrator.max_turns,
         before_send=load_global_mcp_tools,
         after_tool_batch=memory_snapshot,
     )
@@ -477,6 +520,7 @@ async def main(argv: list[str] | None = None) -> int:
         model_picker=pick_model,
         project_context=project_context,
         memory=memory,
+        orchestrator=orchestrator,
     )
     try:
         await InteractiveRunner(input_adapter, output, OperationController()).run(

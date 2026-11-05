@@ -66,9 +66,9 @@ Phase 5 adds an independent subagent layer:
 - Isolated agent state, system prompts, permission modes, and lifecycle events
 - `/agents` for viewing agent descriptions, available tools, and delegation activity
 
-The root agent uses strict delegation. Its tool registry contains only
-`delegate_explorer` and `delegate_coder`; it does not receive the base
-`read_file`, `write_file`, or `bash` tools. The `explorer` subagent handles
+The root agent uses strict delegation. `orchestrator.json` selects its delegation,
+memory, and skill-activation controls and allowed MCP servers. It does not receive
+the base `read_file`, `write_file`, or `bash` tools. The `explorer` subagent handles
 read-only inspection, while the `coder` subagent handles file changes and shell
 commands. This keeps planning/routing separate from workspace execution.
 Delegation itself is automatically allowed; approval is reserved for the
@@ -262,11 +262,67 @@ profiles, their tools, and their skills. See the
 [subagent guide](src/harness/subagents/README.md) for profile configuration,
 delegation, and permissions.
 
+## Orchestrator configuration
+
+`orchestrator.json` in the configured working directory assigns the root's
+capabilities. The checked-in file lists all four current `delegate_<profile>`
+tools, `recall_experience`, `record_experience`, and `activate_skill`; its root
+`skills` assignment starts empty. Edit it and restart to run different experiments.
+For example, this root can delegate to the explorer and recall memory, but cannot
+record new experiences or use MCP:
+
+```json
+{
+  "tools": ["delegate_explorer", "recall_experience"],
+  "skills": [],
+  "mcp_servers": [],
+  "max_turns": 20
+}
+```
+
+When the file exists, `tools`, `skills`, and `mcp_servers` are required arrays of
+unique names. Nothing omitted is automatically added. Unknown fields, unknown
+tools/skills, duplicate names, or invalid dependencies produce a configuration
+error. At least one existing `delegate_<profile>` tool is required; individual
+delegates and memory controls are optional. `max_turns` is an optional positive
+integer, defaulting to 20, and limits only the root loop.
+
+Root tools are limited to existing delegates, the two memory controls, and
+`activate_skill`. Native workspace tools, artifact tools, and capability-acquisition
+controls such as `request_tool` remain child-only. To assign an orchestration skill,
+add its catalog name to `skills` and explicitly include `activate_skill` in `tools`.
+The actual `activate_skill` handler must also exist in `tools.json`; deletion or
+replacement with another handler is an error. A root skill can guide routing and
+assessment; a child skill can guide workspace execution. Assignments are independent,
+and neither grants additional tools or permissions. Root activation uses the normal
+execution policy, including `--allow-tools` in non-interactive mode. Its full activated
+instructions remain protected during compaction; model switches preserve the root's
+system prompt and catalog.
+
+`memory.json` remains the feature/limits/write-policy switch. Assigned memory tools
+are inactive when memory is disabled, rather than breaking the root configuration.
+`/tools` and `/agents` show those inactive assignments and the root configuration mode.
+Removing `record_experience` permits recall-only experiments; `/memory` remains a
+user command for inspecting and forgetting stored records.
+
+`mcp_servers: ["*"]` explicitly allows every server whose `mcp.json` scope applies
+to root; `[]` disables root MCP access. A list such as `["docs"]` allows only those
+exact normalized server names. It never expands scope: child-only or unregistered
+servers yield no root tools. Discovery remains lazy and excluded servers are not
+contacted for the root. Cached child discovery does not bypass this filter. MCP
+execution retains its configured approval policy.
+
+For existing workspaces without `orchestrator.json`, compatibility defaults retain
+all delegates, enabled memory controls, scoped MCP, no root skills, and 20 turns.
+`/agents` labels this as legacy defaults. A malformed or incomplete existing file
+never falls back to those defaults.
+
 ## Skills
 
 Skills provide reusable workflow instructions through `SKILL.md` directories
 in `.agents/skills/` or `~/.agents/skills/`, with optional catalog overrides in
-`skills.json`. Profiles assign skills; child models activate relevant ones. Skill
+`skills.json`. `subagents.json` assigns child skills; `orchestrator.json` separately
+assigns root skills. Models activate relevant assigned skills. Skill
 instructions survive compaction and grant no tools or permissions. See
 [skills and file access](src/harness/subagents/README.md#skills-and-file-access)
 for setup and the [skill capability walkthrough](docs/skill-capability-walkthrough.md)
@@ -433,8 +489,8 @@ HTTP endpoints. The project-local `mcp.json` stores endpoint names, URLs, and
 scope, plus non-secret authentication settings; credentials are resolved from
 environment variables. Tool definitions are fetched from the MCP endpoint on first use and
 cached for the rest of the process. A server can be scoped to one subagent or
-registered with `--global` for all agents, including the root agent. Global
-tools are still discovered only when the root agent first receives a prompt;
+registered with `--global` for all agents, subject to the root's `orchestrator.json`
+server allowlist. Admitted global tools are discovered only when the root first receives a prompt;
 subagent tools are discovered synchronously before that subagent's first agent
 loop. Discovery status is shown in the active UI, and success or server-provided
 failure details are logged. Connections are opened for discovery and individual
