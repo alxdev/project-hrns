@@ -26,7 +26,7 @@ def test_lab_catalog_and_profile_resolve_without_user_home(tmp_path):
             "skill-lab": {
                 "description": "Run isolated lab fixture checks.",
                 "system_prompt": "Use only the assigned lab fixtures and capabilities.",
-                "tools": ["read_file", "bash", "tool_authoring"],
+                "tools": ["read_file", "bash", "tool_authoring", "activate_skill"],
                 "tool_artifacts": [],
                 "skills": ["hello-workflow", *LAB_SKILLS],
                 "permission_mode": "inherit",

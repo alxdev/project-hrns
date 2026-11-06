@@ -508,7 +508,7 @@ async def test_main_assembles_shared_subagent_instructions(tmp_path, monkeypatch
                         "description": "Inspect",
                         "system_prompt": "Remain read-only.",
                         "permission_mode": "inherit",
-                        "tools": ["read_file"],
+                        "tools": ["read_file", "activate_skill"] if with_skill else ["read_file"],
                         "skills": ["example"] if with_skill else [],
                     }
                 }

@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -60,6 +61,60 @@ def test_optional_artifacts_default_does_not_change_file(tmp_path, catalog):
     original = path.read_bytes()
     assert load_profiles(path, catalog)["test"].tools[0] is catalog["bash"]
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"tools": []},
+        {"tools": ["read_file"], "tool_artifacts": ["activate_skill"]},
+        {"tools": ["activate_alias"]},
+    ],
+)
+def test_assigned_skills_require_explicit_canonical_activation(tmp_path, catalog, fields):
+    activation = catalog["activate_skill"]
+    alias = replace(activation, definition=replace(activation.definition, name="activate_alias"))
+    tools = {**catalog.native_tools, "activate_alias": alias}
+    path = write_profile(tmp_path, skills=["example"], **fields)
+    original = path.read_bytes()
+    with pytest.raises(
+        ValueError, match="profile 'test' skills requires explicit 'activate_skill' in tools"
+    ):
+        load_profiles(path, tools)
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("replacement", ["missing", "wrong_handler"])
+def test_explicit_activation_requires_installed_activation_handler(tmp_path, catalog, replacement):
+    path = write_profile(tmp_path, skills=["example"], tools=["activate_skill"])
+    tools = dict(catalog.native_tools)
+    if replacement == "missing":
+        del tools["activate_skill"]
+        message = "profile 'test' references unknown tool 'activate_skill'"
+    else:
+        tools["activate_skill"] = replace(
+            tools["activate_skill"], handler=tools["read_file"].handler
+        )
+        message = "profile 'test' tools 'activate_skill' requires the activate_skill handler"
+    with pytest.raises(ValueError, match=message):
+        load_profiles(path, tools)
+
+
+@pytest.mark.parametrize("assigned", [False, True])
+def test_activation_is_explicit_and_other_controls_remain_automatic(tmp_path, catalog, assigned):
+    path = write_profile(tmp_path, skills=["example"] if assigned else [], tools=["activate_skill"])
+    profile = load_profiles(path, catalog)["test"]
+    assert {tool.definition.name for tool in profile.tools} == {
+        "activate_skill",
+        "request_tool",
+        "list_available_tools",
+    }
+    path = write_profile(tmp_path, skills=[], tools=[])
+    profile = load_profiles(path, catalog)["test"]
+    assert {tool.definition.name for tool in profile.tools} == {
+        "request_tool",
+        "list_available_tools",
+    }
 
 
 @pytest.mark.parametrize("field", ["tools", "tool_artifacts"])

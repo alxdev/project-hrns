@@ -40,7 +40,7 @@ def workspace(tmp_path, monkeypatch):
                     name: {
                         "description": name,
                         "system_prompt": f"{name} configured role",
-                        "tools": ["read_file"],
+                        "tools": ["read_file", "activate_skill"],
                         "skills": skills,
                         "permission_mode": "inherit",
                     }

@@ -20,8 +20,8 @@ the actual model-facing delegation tool is `delegate_skill-lab`. It is not a
 slash command. Each prompt below explicitly asks the root to use that tool.
 
 Inspect `skill-lab` in `subagents.json` before running a scenario. Its native
-`tools` currently include `read_file`, `bash`, and `tool_authoring`, plus
-automatically attached discovery, request, and skill activation controls.
+`tools` currently include `read_file`, `bash`, `tool_authoring`, and the explicitly
+required `activate_skill`. Discovery and request controls are automatically attached.
 The separate `tool_artifacts` array starts empty. Existing saved native access
 is preserved; acquisition tests below require the named tool to be unassigned.
 It inherits the parent permission policy.

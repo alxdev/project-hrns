@@ -31,7 +31,7 @@ def setup_manager(tmp_path, **options):
                     "analyst": {
                         "description": "Analyze documents.",
                         "system_prompt": "PRIVATE ROLE INSTRUCTIONS",
-                        "tools": ["read_file"],
+                        "tools": ["read_file", "activate_skill"],
                         "tool_artifacts": ["reporter"],
                         "skills": ["review"],
                         "permission_mode": "inherit",

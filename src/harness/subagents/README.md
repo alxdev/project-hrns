@@ -19,7 +19,7 @@ For example, after installing an artifact named `csv_summary`:
       "description": "Inspect files and summarize CSV data.",
       "system_prompt": "Analyze the assigned files and report findings.",
       "permission_mode": "inherit",
-      "tools": ["read_file"],
+      "tools": ["read_file", "activate_skill"],
       "tool_artifacts": ["csv_summary"],
       "skills": ["project-summary"],
       "max_turns": 10
@@ -40,7 +40,13 @@ Unknown names, wrong-field assignments, and duplicates within or across the
 arrays are rejected. Both arrays feed the same runtime tool set and follow
 the same discovery, approval, and execution policy.
 
-`skills` defaults to `[]`. MCP-only profiles can use `"tools": []` and
+`skills` defaults to `[]`. A nonempty `skills` array requires the canonical
+`activate_skill` name explicitly in `tools`, backed by the actual `activate_skill`
+handler in `tools.json`. Missing activation is a configuration error; the loader
+does not add it automatically. Profiles without skills need not include it, and
+explicitly including it does not grant access to any unassigned skill. Installed
+`request_tool` and `list_available_tools` controls are still added automatically.
+MCP-only profiles can use `"tools": []` and
 `"requires_tools": true` to require tools before running; `requires_tools`
 defaults to false. Tool implementations and permission enforcement remain in
 Python.
@@ -149,7 +155,8 @@ in `/agents`, including:
 
 - The profile's role, native tools with concise descriptions, and controls such
   as `list_available_tools`, `request_tool`, and `activate_skill` when installed
-  and assigned (including controls automatically added by profile loading).
+  and assigned (`list_available_tools` and `request_tool` are automatically added
+  by profile loading; `activate_skill` must be explicitly assigned).
 - Assigned artifacts and their last known state: undiscovered, last validated,
   or unavailable. Unassigned native tools and already discovered artifacts are
   labeled requestable only when `request_tool` is assigned.

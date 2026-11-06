@@ -34,7 +34,7 @@ def workspace(tmp_path, monkeypatch):
                     name: {
                         "description": name,
                         "system_prompt": f"Role {name}",
-                        "tools": ["read_file"],
+                        "tools": ["read_file", "activate_skill"],
                         "skills": ["child"],
                         "permission_mode": "inherit",
                         "max_turns": 7,

@@ -323,6 +323,8 @@ Skills provide reusable workflow instructions through `SKILL.md` directories
 in `.agents/skills/` or `~/.agents/skills/`, with optional catalog overrides in
 `skills.json`. `subagents.json` assigns child skills; `orchestrator.json` separately
 assigns root skills. Models activate relevant assigned skills. Skill
+assignments require `activate_skill` explicitly in that agent's `tools` array;
+missing activation is a configuration error, never an automatic tool addition. Skill
 instructions survive compaction and grant no tools or permissions. See
 [skills and file access](src/harness/subagents/README.md#skills-and-file-access)
 for setup and the [skill capability walkthrough](docs/skill-capability-walkthrough.md)
