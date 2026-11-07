@@ -1,9 +1,6 @@
 {
   "tools": [
-    "delegate_skill-lab",
-    "delegate_explorer",
-    "delegate_coder",
-    "delegate_gmail",
+    "delegate_subagent",
     "recall_experience",
     "record_experience",
     "activate_skill"

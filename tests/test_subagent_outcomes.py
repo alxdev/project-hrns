@@ -50,13 +50,13 @@ def setup(tmp_path, responses=(), tools=(), **agent_options):
     )
     profile = SubagentProfile("worker", "Worker", "Configured role", tools=tuple(tools))
     manager = SubagentManager(lambda _profile: child, {"worker": profile})
-    delegation = DelegationTool("worker", "Worker")
+    delegation = DelegationTool()
     delegation.bind(manager)
     return child, manager, delegation
 
 
 async def invoke(delegation, tmp_path, task="Exact objective\nwith α"):
-    result = await delegation.execute(ToolContext(tmp_path), {"task": task})
+    result = await delegation.execute(ToolContext(tmp_path), {"profile": "worker", "task": task})
     return result, json.loads(result.content)
 
 
@@ -251,7 +251,7 @@ async def test_preflight_failures_have_versioned_envelope_and_no_run_id(tmp_path
     _child, manager, delegation = setup(tmp_path)
     task = "Task"
     if reason == "unbound":
-        delegation = DelegationTool("worker", "Worker")
+        delegation = DelegationTool()
     elif reason == "unknown":
         manager.profiles.clear()
     elif reason == "empty":

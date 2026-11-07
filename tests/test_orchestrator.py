@@ -48,7 +48,7 @@ def workspace(tmp_path, monkeypatch):
 
 
 def config(workspace, **changes):
-    raw = {"tools": ["delegate_alpha"], "skills": [], "mcp_servers": []}
+    raw = {"tools": ["delegate_subagent"], "skills": [], "mcp_servers": []}
     raw.update(changes)
     (workspace / "orchestrator.json").write_text(json.dumps(raw))
     return raw
@@ -57,7 +57,6 @@ def config(workspace, **changes):
 def load(workspace, *, memory_enabled=True):
     return load_orchestrator(
         workspace / "orchestrator.json",
-        delegation_names=("delegate_alpha", "delegate_beta"),
         native_tools=load_tools(workspace / "tools.json"),
         skills=load_skills(workspace / "skills.json", workspace),
         memory_enabled=memory_enabled,
@@ -79,7 +78,7 @@ def test_required_fields_are_not_silently_restored(workspace, field):
         ({"tools": []}, "tools"),
         ({"tools": ["delegate_missing"]}, "tools"),
         *[
-            ({"tools": ["delegate_alpha", name]}, "tools")
+            ({"tools": ["delegate_subagent", name]}, "tools")
             for name in (
                 "read_file",
                 "bash",
@@ -89,7 +88,7 @@ def test_required_fields_are_not_silently_restored(workspace, field):
                 "mcp_docs_search",
             )
         ],
-        ({"tools": ["delegate_alpha", "delegate_alpha"]}, "tools"),
+        ({"tools": ["delegate_subagent", "delegate_subagent"]}, "tools"),
         ({"skills": ["missing"]}, "skills"),
         ({"skills": ["route"]}, "skills"),
         ({"skills": {}}, "skills"),
@@ -111,21 +110,27 @@ def test_missing_file_only_uses_legacy_defaults(workspace):
     loaded = load(workspace)
     assert not loaded.explicit and "legacy defaults" in loaded.describe()
     assert set(loaded.tools) == {
-        "delegate_alpha",
-        "delegate_beta",
+        "delegate_subagent",
         "recall_experience",
         "record_experience",
     }
     assert loaded.skills == () and loaded.mcp_servers == ("*",)
-    assert load(workspace, memory_enabled=False).tools == ("delegate_alpha", "delegate_beta")
+    assert load(workspace, memory_enabled=False).tools == ("delegate_subagent",)
     (workspace / "orchestrator.json").write_text("{")
     with pytest.raises(ValueError, match="orchestrator.json"):
         load(workspace)
 
 
+@pytest.mark.parametrize("old_name", ["delegate_alpha", "delegate_skill-lab", "delegate_missing"])
+def test_old_per_profile_assignments_require_explicit_migration(workspace, old_name):
+    config(workspace, tools=[old_name])
+    with pytest.raises(ValueError, match="replace them with delegate_subagent"):
+        load(workspace)
+
+
 @pytest.mark.parametrize("replacement", [None, "read_file"])
 def test_activation_requires_real_installed_handler(workspace, replacement):
-    config(workspace, tools=["delegate_alpha", "activate_skill"], skills=["route"])
+    config(workspace, tools=["delegate_subagent", "activate_skill"], skills=["route"])
     raw = json.loads((workspace / "tools.json").read_text())
     if replacement is None:
         del raw["tools"]["activate_skill"]
@@ -156,6 +161,39 @@ async def boot(workspace, monkeypatch, provider=None, *, allow_tools=True):
     return captured[0]
 
 
+async def test_added_profile_appears_without_changing_root_config_or_tool_names(
+    workspace, monkeypatch
+):
+    config(workspace)
+    original = (workspace / "orchestrator.json").read_bytes()
+    first = await boot(workspace, monkeypatch)
+    assert first.tools.names() == ("delegate_subagent",)
+    assert first.tools.definitions()[0].input_schema["properties"]["profile"]["enum"] == [
+        "alpha",
+        "beta",
+    ]
+    path = workspace / "subagents.json"
+    raw = json.loads(path.read_text())
+    raw["profiles"]["gamma"] = {
+        "description": "New profile",
+        "system_prompt": "Private role",
+        "tools": [],
+        "permission_mode": "inherit",
+    }
+    path.write_text(json.dumps(raw))
+    second = await boot(workspace, monkeypatch)
+    assert second.tools.names() == ("delegate_subagent",)
+    definition = second.tools.definitions()[0]
+    assert definition.input_schema["properties"]["profile"]["enum"] == ["alpha", "beta", "gamma"]
+    assert "Profile gamma:\nNew profile" in definition.description
+    assert "Private role" not in definition.description
+    result = await second.tools.execute(
+        second.context, "delegate_subagent", {"profile": "gamma", "task": "New work"}
+    )
+    assert not result.is_error and json.loads(result.content)["profile"] == "gamma"
+    assert (workspace / "orchestrator.json").read_bytes() == original
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize(
     "memory_tools",
@@ -164,17 +202,17 @@ async def boot(workspace, monkeypatch, provider=None, *, allow_tools=True):
 async def test_root_registry_is_authoritative_and_memory_controls_independent(
     workspace, monkeypatch, enabled, memory_tools
 ):
-    config(workspace, tools=["delegate_alpha", *memory_tools], max_turns=3)
+    config(workspace, tools=["delegate_subagent", *memory_tools], max_turns=3)
     (workspace / "memory.json").write_text(json.dumps({"enabled": enabled}))
     agent = await boot(workspace, monkeypatch)
-    assert set(agent.tools.names()) == {"delegate_alpha", *(memory_tools if enabled else [])}
+    assert set(agent.tools.names()) == {"delegate_subagent", *(memory_tools if enabled else [])}
     assert agent.max_turns == 3
     assert (agent.after_tool_batch is not None) == (enabled and "recall_experience" in memory_tools)
     assert agent.context.tool_catalog is None and agent.context.allowed_skills == ()
     for name in ("delegate_beta", "read_file", "request_tool"):
         result = await agent.tools.execute(agent.context, name, {})
         assert result.is_error and "unknown tool" in result.content
-    manager = agent.tools.get("delegate_alpha")._manager
+    manager = agent.tools.get("delegate_subagent")._manager
     assert manager.profiles["beta"].max_turns == 7
     assert "read_file" in {tool.definition.name for tool in manager.profiles["beta"].tools}
     context = CommandContext(
@@ -196,7 +234,7 @@ async def test_root_registry_is_authoritative_and_memory_controls_independent(
 async def test_root_skill_permission_scope_and_full_compaction_protection(
     workspace, monkeypatch, allowed
 ):
-    config(workspace, tools=["delegate_alpha", "activate_skill"], skills=["route"])
+    config(workspace, tools=["delegate_subagent", "activate_skill"], skills=["route"])
     provider = MockProvider(
         [
             ProviderResponse(
@@ -228,7 +266,7 @@ async def test_root_skill_permission_scope_and_full_compaction_protection(
     }
     assert results["one"].is_error == (not allowed)
     assert results["bad"].is_error
-    assert set(agent.tools.names()) == {"delegate_alpha", "activate_skill"}
+    assert set(agent.tools.names()) == {"delegate_subagent", "activate_skill"}
     if allowed:
         full = protected[0].content[0].text
         assert "FULL route INSTRUCTIONS" in full
@@ -352,7 +390,7 @@ async def test_root_skill_catalog_and_full_activation_survive_model_switch(works
     import harness.ui.prompt_toolkit_rich as ui
     from harness.model_catalog import ModelCatalog, ModelChoice
 
-    config(workspace, tools=["delegate_alpha", "activate_skill"], skills=["route"])
+    config(workspace, tools=["delegate_subagent", "activate_skill"], skills=["route"])
     initial = ModelChoice("mock/initial", "openai", "initial", "Initial", {})
     changed = ModelChoice("mock/changed", "openai", "changed", "Changed", {})
     monkeypatch.setattr(ModelCatalog, "load", lambda _path: ModelCatalog((initial, changed)))
@@ -398,7 +436,7 @@ async def test_root_skill_catalog_and_full_activation_survive_model_switch(works
         context.select_model(changed.key)
         assert switched.system == before and switched.system.count("## Available skills") == 1
         assert full in agent.messages and "FULL route INSTRUCTIONS" in full.content[0].text
-        assert set(agent.tools.names()) == {"delegate_alpha", "activate_skill"}
+        assert set(agent.tools.names()) == {"delegate_subagent", "activate_skill"}
         await agent.send("Continue")
         assert switched.system == before
 

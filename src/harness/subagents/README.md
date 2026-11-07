@@ -28,7 +28,7 @@ For example, after installing an artifact named `csv_summary`:
 }
 ```
 
-The profile name determines its delegation tool, here `delegate_analyst`.
+The profile name is selected through `delegate_subagent`, here `"profile": "analyst"`.
 `description`, `system_prompt`, `permission_mode`, and `tools` are required.
 Permission modes are `inherit`, `ask`, `auto_allow`, and `deny`.
 `max_turns` defaults to 10 and must be a positive integer.
@@ -71,7 +71,7 @@ or locations:
 }
 ```
 
-A profile's `skills` array selects the child's catalog. Each root delegation tool
+A profile's `skills` array selects the child's catalog. The root delegation tool
 includes the assigned skill names and concise catalog descriptions for routing;
 unassigned skills are excluded. The root may name a skill explicitly in the
 delegation `task`. The child model selects and activates relevant assigned skills.
@@ -148,8 +148,8 @@ assuming a missing capability; required skill steps must not be silently skipped
 
 ## Delegation
 
-The main agent receives one tool per profile, such as `delegate_explorer` or
-`delegate_coder`. Its description is generated from current profile assignments,
+The main agent receives one `delegate_subagent` tool with required `profile` and
+`task` arguments. Its profile enum and catalog are generated from current configured profiles,
 the skill catalog, and existing tool/MCP observations. The same summary appears
 in `/agents`, including:
 
@@ -175,13 +175,22 @@ after saved grants, artifact observations/replacements, or MCP discovery and
 configuration changes. Transient grants in a live child's registry are excluded
 from future-delegation summaries. Capability summaries themselves add no persistent state.
 
-Each delegation tool still accepts only:
+The delegation tool accepts only:
 
 ```json
 {
+  "profile": "explorer",
   "task": "Find the configuration files and summarize them."
 }
 ```
+
+All profiles in the current manager are selectable. Adding a profile to
+`subagents.json` and restarting exposes it without editing `orchestrator.json`
+or registering another tool. Runtime profile/assignment changes refresh the same
+tool's metadata. An empty catalog is reported explicitly; unknown profiles and
+missing or blank arguments return structured preflight failures without creating a run.
+There are no per-profile tool aliases. Older root configurations using
+`delegate_<profile>` names must replace those entries with `delegate_subagent`.
 
 Every delegation creates a fresh child, which runs its own tool loop to complete
 the focused `task`. The root retains previous results and supplies any earlier

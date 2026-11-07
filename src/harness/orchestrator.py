@@ -50,17 +50,15 @@ class OrchestratorConfig:
 def load_orchestrator(
     path: Path,
     *,
-    delegation_names: Iterable[str],
     native_tools: Iterable[Tool],
     skills: SkillCatalog,
     memory_enabled: bool,
 ) -> OrchestratorConfig:
-    delegates = tuple(delegation_names)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return OrchestratorConfig(
-            tools=delegates + (tuple(sorted(MEMORY_TOOLS)) if memory_enabled else ())
+            tools=("delegate_subagent",) + (tuple(sorted(MEMORY_TOOLS)) if memory_enabled else ())
         )
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"cannot read {path}: {exc}") from exc
@@ -79,16 +77,22 @@ def load_orchestrator(
     turns = raw.get("max_turns", 20)
     if type(turns) is not int or turns < 1:
         raise ValueError("orchestrator.json max_turns must be a positive integer")
-    allowed = set(delegates) | MEMORY_TOOLS | {"activate_skill"}
+    obsolete = [
+        name for name in selected if name.startswith("delegate_") and name != "delegate_subagent"
+    ]
+    if obsolete:
+        raise ValueError(
+            f"orchestrator.json tools contains obsolete per-profile tools: {', '.join(obsolete)}; "
+            "replace them with delegate_subagent and pass the profile name in each call"
+        )
+    allowed = MEMORY_TOOLS | {"activate_skill", "delegate_subagent"}
     invalid = set(selected) - allowed
     if invalid:
         raise ValueError(
             f"orchestrator.json tools contains unknown root tools: {', '.join(sorted(invalid))}"
         )
-    if not set(selected).intersection(delegates):
-        raise ValueError(
-            "orchestrator.json tools requires at least one existing delegate_<profile> tool"
-        )
+    if "delegate_subagent" not in selected:
+        raise ValueError("orchestrator.json tools requires delegate_subagent")
     missing_skills = [name for name in assigned_skills if skills.get(name) is None]
     if missing_skills:
         raise ValueError(

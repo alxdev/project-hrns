@@ -134,7 +134,8 @@ async def test_startup_skips_only_invalid_artifacts(
     root = MockProvider(
         [
             ProviderResponse(
-                [ToolCall("delegate", "delegate_lab", {"task": "Inspect"})], "tool_use"
+                [ToolCall("delegate", "delegate_subagent", {"profile": "lab", "task": "Inspect"})],
+                "tool_use",
             ),
             ProviderResponse([TextBlock("Done")], "end_turn"),
         ]

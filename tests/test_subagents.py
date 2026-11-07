@@ -13,6 +13,7 @@ from harness.provider.base import ProviderResponseCompleted
 from harness.subagents import (
     DelegationTool,
     SubagentManager,
+    SubagentProfile,
     SubagentStatus,
     load_profiles,
 )
@@ -285,12 +286,12 @@ async def test_delegation_tool_returns_subagent_result(tmp_path):
 
     profiles = configured_profiles(tmp_path, [])
     manager = SubagentManager(factory, profiles)
-    tool = DelegationTool("explorer", profiles["explorer"].description)
+    tool = DelegationTool()
     tool.bind(manager)
 
     result = await tool.execute(
         ToolContext(Path.cwd()),
-        {"task": "find the entry point"},
+        {"profile": "explorer", "task": "find the entry point"},
     )
 
     assert result.is_error is False
@@ -298,16 +299,23 @@ async def test_delegation_tool_returns_subagent_result(tmp_path):
 
 
 def test_delegation_tool_exposes_profile_schema():
-    tool = DelegationTool("explorer", "Investigate the codebase.")
+    tool = DelegationTool()
 
     assert tool.definition == ToolDefinition(
-        name="delegate_explorer",
-        description="Investigate the codebase.",
+        name="delegate_subagent",
+        description="Delegate a focused task to one configured subagent profile.\n\n"
+        "No subagent profiles are configured.",
         input_schema={
             "type": "object",
             "properties": {
+                "profile": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Exact configured subagent profile name from the catalog below.",
+                },
                 "task": {
                     "type": "string",
+                    "minLength": 1,
                     "description": "The complete bounded outcome for this profile, including "
                     "the user's requested scope, exact targets, inputs, constraints, and "
                     "verification only as needed and proportional to establish the requested "
@@ -317,6 +325,102 @@ def test_delegation_tool_exposes_profile_schema():
                     "assignment; use discovery-only scope only when that is the outcome.",
                 },
             },
-            "required": ["task"],
+            "required": ["profile", "task"],
+            "additionalProperties": False,
         },
     )
+
+
+async def test_one_tool_routes_all_profiles_with_live_catalog_and_isolated_outcomes(tmp_path):
+    ready = asyncio.Event()
+    entered = 0
+
+    class Child:
+        def __init__(self, profile):
+            self.profile = profile
+
+        async def send(self, prompt):
+            nonlocal entered
+            entered += 1
+            if entered == 3:
+                ready.set()
+            await ready.wait()
+            return f"{self.profile.name}: {prompt}"
+
+    manager = SubagentManager(
+        Child,
+        {
+            name: SubagentProfile(name, f"Description {name}", f"PRIVATE {name}")
+            for name in ("alpha", "beta")
+        },
+    )
+    tool = DelegationTool()
+    tool.bind(manager)
+    original = tool.definition
+    assert original.input_schema["properties"]["profile"]["enum"] == ["alpha", "beta"]
+    assert (
+        "Description alpha" in original.description and "Description beta" in original.description
+    )
+    assert "PRIVATE" not in original.description
+    manager.profiles["gamma"] = SubagentProfile("gamma", "New description", "PRIVATE gamma")
+    updated = tool.definition
+    assert updated.input_schema["properties"]["profile"]["enum"] == ["alpha", "beta", "gamma"]
+    assert "New description" in updated.description
+    assert original.input_schema["properties"]["profile"]["enum"] == ["alpha", "beta"]
+    assignments = [("alpha", "Exact task α\nOne"), ("beta", "Two"), ("alpha", "Three")]
+    results = await asyncio.wait_for(
+        asyncio.gather(
+            *(
+                tool.execute(ToolContext(tmp_path), {"profile": profile, "task": task})
+                for profile, task in assignments
+            )
+        ),
+        2,
+    )
+    outcomes = [json.loads(result.content) for result in results]
+    assert all(not result.is_error for result in results)
+    assert len({outcome["run_id"] for outcome in outcomes}) == 3
+    for outcome, (profile, task) in zip(outcomes, assignments, strict=True):
+        assert outcome["profile"] == profile and outcome["objective"] == task
+        assert outcome["schema_version"] == 1 and outcome["verification_status"] == "not_assessed"
+        assert outcome["child_response"] == f"{profile}: Focused assigned task:\n{task}"
+    del manager.profiles["beta"]
+    assert "beta" not in tool.definition.input_schema["properties"]["profile"]["enum"]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {},
+        {"task": "Work"},
+        {"profile": None, "task": "Work"},
+        {"profile": "", "task": "Work"},
+        {"profile": " ", "task": "Work"},
+        {"profile": "unknown", "task": "Work"},
+        {"profile": "alpha"},
+        {"profile": "alpha", "task": None},
+        {"profile": "alpha", "task": " \n"},
+        {"profile": "alpha", "task": "Work", "unexpected": True},
+    ],
+)
+async def test_generic_delegation_rejects_invalid_inputs_without_creating_run(tmp_path, arguments):
+    manager = SubagentManager(
+        lambda _profile: pytest.fail("must not create child"),
+        {"alpha": SubagentProfile("alpha", "Alpha", "Role")},
+    )
+    tool = DelegationTool()
+    tool.bind(manager)
+    result = await tool.execute(ToolContext(tmp_path), arguments)
+    outcome = json.loads(result.content)
+    assert result.is_error and outcome["schema_version"] == 1
+    assert outcome["run_id"] is None and outcome["errors"][0]["stage"] == "preflight"
+    assert not manager.records()
+
+
+async def test_empty_profile_catalog_has_no_empty_enum_and_returns_clear_error(tmp_path):
+    tool = DelegationTool()
+    tool.bind(SubagentManager(lambda _profile: None, {}))
+    assert "No subagent profiles" in tool.definition.description
+    assert "enum" not in tool.definition.input_schema["properties"]["profile"]
+    result = await tool.execute(ToolContext(tmp_path), {"profile": "missing", "task": "Work"})
+    assert result.is_error and "available: none" in result.content

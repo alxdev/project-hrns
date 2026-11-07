@@ -61,7 +61,7 @@ Phase 5 adds an independent subagent layer:
 
 - Reusable `explorer` and `coder` agent profiles
 - Curated tool sets for each profile
-- Profile-specific `delegate_explorer` and `delegate_coder` tools
+- One `delegate_subagent` tool that selects any configured profile
 - Active and completed subagent tracking
 - Isolated agent state, system prompts, permission modes, and lifecycle events
 - `/agents` for viewing agent descriptions, available tools, and delegation activity
@@ -268,15 +268,15 @@ delegation, and permissions.
 ## Orchestrator configuration
 
 `orchestrator.json` in the configured working directory assigns the root's
-capabilities. The checked-in file lists all four current `delegate_<profile>`
-tools, `recall_experience`, `record_experience`, and `activate_skill`; its root
+capabilities. The checked-in file lists `delegate_subagent`, `recall_experience`,
+`record_experience`, and `activate_skill`; its root
 `skills` assignment starts empty. Edit it and restart to run different experiments.
-For example, this root can delegate to the explorer and recall memory, but cannot
+For example, this root can delegate to any configured profile and recall memory, but cannot
 record new experiences or use MCP:
 
 ```json
 {
-  "tools": ["delegate_explorer", "recall_experience"],
+  "tools": ["delegate_subagent", "recall_experience"],
   "skills": [],
   "mcp_servers": [],
   "max_turns": 20
@@ -286,11 +286,16 @@ record new experiences or use MCP:
 When the file exists, `tools`, `skills`, and `mcp_servers` are required arrays of
 unique names. Nothing omitted is automatically added. Unknown fields, unknown
 tools/skills, duplicate names, or invalid dependencies produce a configuration
-error. At least one existing `delegate_<profile>` tool is required; individual
-delegates and memory controls are optional. `max_turns` is an optional positive
+error. `delegate_subagent` is required; memory controls are optional.
+Adding a profile to `subagents.json` requires no change to this tool list. After
+restart, its name and capability summary appear in the delegation tool's catalog.
+Calls use `{"profile": "explorer", "task": "Find the configuration files."}`.
+Old `delegate_<profile>` entries must be replaced with `delegate_subagent`; startup
+reports a migration error rather than retaining hidden aliases.
+`max_turns` is an optional positive
 integer, defaulting to 20, and limits only the root loop.
 
-Root tools are limited to existing delegates, the two memory controls, and
+Root tools are limited to `delegate_subagent`, the two memory controls, and
 `activate_skill`. Native workspace tools, artifact tools, and capability-acquisition
 controls such as `request_tool` remain child-only. To assign an orchestration skill,
 add its catalog name to `skills` and explicitly include `activate_skill` in `tools`.
@@ -316,7 +321,7 @@ contacted for the root. Cached child discovery does not bypass this filter. MCP
 execution retains its configured approval policy.
 
 For existing workspaces without `orchestrator.json`, compatibility defaults retain
-all delegates, enabled memory controls, scoped MCP, no root skills, and 20 turns.
+`delegate_subagent`, enabled memory controls, scoped MCP, no root skills, and 20 turns.
 `/agents` labels this as legacy defaults. A malformed or incomplete existing file
 never falls back to those defaults.
 
@@ -437,18 +442,18 @@ selected permission mode as `tools_allowed`.
 ### Phase 5 — Subagents
 
 Completed. The implementation lives in `src/harness/subagents/`. The main
-agent receives only profile-specific delegation tools while each subagent gets its
+agent routes through `delegate_subagent` while each subagent gets its
 own isolated agent instance, system prompt, permission mode, and curated
 `ToolRegistry`.
 
 Use `/agents` interactively to inspect each profile's role, native tools, artifacts,
 assigned skills, MCP discovery state, and delegation status. The same generated
-capability summary is included in each root delegation tool's description and
+capability summary is included in the generic delegation tool's profile catalog and
 refreshes after saved access grants and runtime discovery. Summaries preserve lazy
 loading and distinguish assigned resources, requestable tools, and unknown or
 unavailable capabilities; they do not grant permission. Full child tool schemas
-and skill instructions stay with the child. The main agent can delegate through
-`delegate_explorer` or `delegate_coder`.
+and skill instructions stay with the child. The main agent selects a profile with
+the tool's `profile` argument; `task` remains the focused assignment.
 
 Delegation results use a versioned JSON envelope with the exact child response,
 run identity, lifecycle status, observed resource usage, and structured errors.
@@ -568,7 +573,7 @@ again depending on the provider. As with all MCP tools, calls remain subject to
 the configured tool-approval policy.
 
 The built-in `gmail` subagent is scoped to the Gmail MCP registration in the
-local `mcp.json`; invoke it through `delegate_gmail`. Google's Gmail MCP is a
+local `mcp.json`; invoke `delegate_subagent` with `profile: "gmail"`. Google's Gmail MCP is a
 Developer Preview and provides email search/read, labels, and draft creation.
 It does not expose a direct send-email tool, so the subagent can prepare drafts
 for you to review and send in Gmail, but must not claim to have sent a message.

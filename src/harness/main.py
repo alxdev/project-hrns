@@ -222,7 +222,6 @@ async def main(argv: list[str] | None = None) -> int:
     try:
         orchestrator = load_orchestrator(
             config.working_directory / "orchestrator.json",
-            delegation_names=(f"delegate_{name}" for name in profiles),
             native_tools=base_tools,
             skills=skill_catalog,
             memory_enabled=memory_config.enabled,
@@ -374,16 +373,11 @@ async def main(argv: list[str] | None = None) -> int:
         mcp=mcp_manager,
         working_directory=config.working_directory,
     )
-    delegation_tools = [
-        DelegationTool(profile.name, profile.description)
-        for profile in profiles.values()
-        if f"delegate_{profile.name}" in orchestrator.active_tools
-    ]
-    for delegation_tool in delegation_tools:
-        delegation_tool.bind(subagents)
+    delegation_tool = DelegationTool()
+    delegation_tool.bind(subagents)
     # Keep the root agent as a strict planner/router. Workspace inspection,
     # file writes, and shell execution are available only through subagents.
-    registry = ToolRegistry(delegation_tools)
+    registry = ToolRegistry([delegation_tool])
     memory = MemoryManager(
         memory_config, MemoryStore(config.data_directory, config.working_directory), subagents
     )

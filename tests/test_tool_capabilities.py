@@ -524,7 +524,12 @@ async def test_main_assembles_shared_subagent_instructions(tmp_path, monkeypatch
     root = MockProvider(
         [
             ProviderResponse(
-                [ToolCall("delegate", "delegate_explorer", {"task": "Inspect"})], "tool_use"
+                [
+                    ToolCall(
+                        "delegate", "delegate_subagent", {"profile": "explorer", "task": "Inspect"}
+                    )
+                ],
+                "tool_use",
             ),
             ProviderResponse([TextBlock("Done")], "end_turn"),
         ]

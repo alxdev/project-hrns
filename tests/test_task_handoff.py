@@ -25,7 +25,9 @@ def done(text="Done"):
 
 
 def call(task="Inspect"):
-    return ProviderResponse([ToolCall("delegate", "delegate_worker", {"task": task})], "tool_use")
+    return ProviderResponse(
+        [ToolCall("delegate", "delegate_subagent", {"profile": "worker", "task": task})], "tool_use"
+    )
 
 
 def text_context(messages):
@@ -45,7 +47,7 @@ def delegator(tmp_path, child_factory):
     manager = SubagentManager(
         child_factory, {"worker": SubagentProfile("worker", "Worker", "Worker")}
     )
-    tool = DelegationTool("worker", "Worker")
+    tool = DelegationTool()
     tool.bind(manager)
     return manager, tool
 
@@ -81,7 +83,7 @@ async def test_root_keeps_raw_requests_and_delegates_only_focused_tasks_to_fresh
         is not children[1].context.artifact_authoring_intents
     )
     assert manager.records()[0].prompt == "Inspect"
-    assert root_provider.calls[0][1][0].input_schema["required"] == ["task"]
+    assert root_provider.calls[0][1][0].input_schema["required"] == ["profile", "task"]
     assert all(origin in text_context(root.messages) for origin in origins)
     assert "Focused assigned task:" not in str(root.messages)
 

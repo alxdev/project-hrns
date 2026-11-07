@@ -61,7 +61,10 @@ async def test_noninteractive_skill_catalog_is_child_only_with_unchanged_task_ha
     task = "Use shared skill to report the intended result for α\nwith exact input."
     root = MockProvider(
         [
-            ProviderResponse([ToolCall("delegate", "delegate_alpha", {"task": task})], "tool_use"),
+            ProviderResponse(
+                [ToolCall("delegate", "delegate_subagent", {"profile": "alpha", "task": task})],
+                "tool_use",
+            ),
             done("Received child result"),
         ]
     )
@@ -91,11 +94,14 @@ async def test_noninteractive_skill_catalog_is_child_only_with_unchanged_task_ha
     descriptions = {definition.name: definition.description for definition in root.calls[0][1]}
     assert (
         "skill shared [assigned; cataloged] — Shared analysis workflow"
-        in descriptions["delegate_alpha"]
+        in descriptions["delegate_subagent"]
     )
-    assert "Review workflow" not in descriptions["delegate_alpha"]
+    assert "Review workflow" in descriptions["delegate_subagent"]  # beta is also selectable.
     assert "PRIVATE BODY" not in str(descriptions)
-    assert schema["required"] == ["task"] and set(schema["properties"]) == {"task"}
+    assert schema["required"] == ["profile", "task"] and set(schema["properties"]) == {
+        "profile",
+        "task",
+    }
     assert "Actual child result" in str(root.calls[1][0])
     assert len(root.calls) == 2 and len(child.calls) == 1
 
@@ -116,7 +122,13 @@ async def test_interactive_model_switch_preserves_root_prompt_and_child_only_ski
     switched = MockProvider(
         [
             ProviderResponse(
-                [ToolCall("delegate", "delegate_alpha", {"task": "Use shared; report result"})],
+                [
+                    ToolCall(
+                        "delegate",
+                        "delegate_subagent",
+                        {"profile": "alpha", "task": "Use shared; report result"},
+                    )
+                ],
                 "tool_use",
             ),
             done(),

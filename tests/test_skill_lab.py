@@ -49,7 +49,7 @@ def test_lab_catalog_and_profile_resolve_without_user_home(tmp_path):
         "list_available_tools",
         "request_tool",
     }
-    assert DelegationTool(profile.name, profile.description).definition.name == "delegate_skill-lab"
+    assert DelegationTool().definition.name == "delegate_subagent"
     assert {"hello-workflow", "project-summary"} <= catalog.skills.keys()
     for name in LAB_SKILLS:
         skill = catalog.get(name)

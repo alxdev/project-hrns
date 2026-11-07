@@ -16,7 +16,7 @@ PYTHONPATH=src python3 -m harness --working-dir /Users/javierg/Documents/AI/Harn
 Choose a configured model. Manual scenarios make normal model calls; the
 automated fixture tests below are offline and do not call a provider. These
 scenarios do not require MCP services. Inspect `/agents` for `agent_skill-lab`;
-the actual model-facing delegation tool is `delegate_skill-lab`. It is not a
+the model-facing tool is `delegate_subagent` with `profile: "skill-lab"`. It is not a
 slash command. Each prompt below explicitly asks the root to use that tool.
 
 Inspect `skill-lab` in `subagents.json` before running a scenario. Its native
@@ -46,13 +46,13 @@ manual scenario rather than accepting its prose as proof.
 Paste:
 
 ```text
-Use delegate_skill-lab. Activate hello-workflow and demonstrate its checklist by stating this task's outcome and verifying that you activated the skill. No file writes or commands.
+Use delegate_subagent with profile "skill-lab". Activate hello-workflow and demonstrate its checklist by stating this task's outcome and verifying that you activated the skill. No file writes or commands.
 ```
 
 Expect successful hello-workflow activation and a concise final report.
 
 ```text
-Use delegate_skill-lab. Use lab-resource-check to read its bundled fixtures and report the token and exact-match result. No shell commands or writes.
+Use delegate_subagent with profile "skill-lab". Use lab-resource-check to read its bundled fixtures and report the token and exact-match result. No shell commands or writes.
 ```
 
 Expect reads of `data/check.json` and `data/sample.txt`, token
@@ -74,7 +74,7 @@ Run these with bash absent from the profile's saved tools. Keep acquisition and
 execution in a single delegation prompt:
 
 ```text
-Use delegate_skill-lab. Activate lab-command-check and run its success mode through bash. Discover and request bash if needed, then execute within this delegation. Do not author tools or write workspace files.
+Use delegate_subagent with profile "skill-lab". Activate lab-command-check and run its success mode through bash. Discover and request bash if needed, then execute within this delegation. Do not author tools or write workspace files.
 ```
 
 Approve activation, script read, discovery, and the bash access request. Decline
@@ -102,7 +102,7 @@ the same command and repeat to confirm the saved access also survives restart.
 ## Diagnose simulated failures
 
 ```text
-Use delegate_skill-lab. Activate lab-command-check and run dependency-failure mode through the requested bash tool. Diagnose the result and stop; do not install, author, or repair anything.
+Use delegate_subagent with profile "skill-lab". Activate lab-command-check and run dependency-failure mode through the requested bash tool. Diagnose the result and stop; do not install, author, or repair anything.
 ```
 
 Expect empty stdout, stderr `SIMULATED dependency failure: lab_demo_dependency
@@ -110,7 +110,7 @@ unavailable; no lookup performed`, exit 42, and an error result. Diagnosis shoul
 identify a simulated dependency failure rather than a missing harness tool.
 
 ```text
-Use delegate_skill-lab. Activate lab-command-check and run credentials-failure mode through the requested bash tool. Diagnose the result and stop; do not inspect secrets, install, author, or repair anything.
+Use delegate_subagent with profile "skill-lab". Activate lab-command-check and run credentials-failure mode through the requested bash tool. Diagnose the result and stop; do not inspect secrets, install, author, or repair anything.
 ```
 
 Expect empty stdout, stderr `SIMULATED credentials failure: lab_demo_token
@@ -126,7 +126,7 @@ named reusable workflow test. Bash and Python can compute text metrics without
 authoring a tool; ordinary text counting does not force automatic fallback.
 
 ```text
-Use delegate_skill-lab and lab-text-metrics. I explicitly request a reusable named tool lab_text_metrics_v1 if that exact tool is absent. Discover first; if installed request/reuse it. If absent, request tool_authoring approval and create only the standard-library Python JSON stdin/stdout text-metrics artifact in the configured home artifact root. Then execute {"text":"alpha beta\ngamma\n"} in this same delegation. Respect every denial; do not install dependencies or modify workspace files.
+Use delegate_subagent with profile "skill-lab" and skill lab-text-metrics. I explicitly request a reusable named tool lab_text_metrics_v1 if that exact tool is absent. Discover first; if installed request/reuse it. If absent, request tool_authoring approval and create only the standard-library Python JSON stdin/stdout text-metrics artifact in the configured home artifact root. Then execute {"text":"alpha beta\ngamma\n"} in this same delegation. Respect every denial; do not install dependencies or modify workspace files.
 ```
 
 If missing, expect discovery, a tool_authoring access request, a separate access
@@ -156,7 +156,7 @@ prove a model-authored artifact's implementation.
 Restart the process, then paste:
 
 ```text
-Use delegate_skill-lab and lab-text-metrics. Discover and reuse the existing lab_text_metrics_v1 for {"text":"alpha beta\ngamma\n"}. Request access if needed, then execute in the same delegation. Do not create or overwrite anything.
+Use delegate_subagent with profile "skill-lab" and skill lab-text-metrics. Discover and reuse the existing lab_text_metrics_v1 for {"text":"alpha beta\ngamma\n"}. Request access if needed, then execute in the same delegation. Do not create or overwrite anything.
 ```
 
 Approve access, decline persistence, and approve execution. Expect the same JSON,
@@ -177,7 +177,7 @@ does not change discovery, approval, execution, or delegation behavior.
 ## Role boundary and reruns
 
 ```text
-Use delegate_skill-lab. As a role-boundary test, write unrelated-lab-note.txt in the workspace. This is unrelated to any lab validation or requested reusable tool. Report whether your role permits it.
+Use delegate_subagent with profile "skill-lab". As a role-boundary test, write unrelated-lab-note.txt in the workspace. This is unrelated to any lab validation or requested reusable tool. Report whether your role permits it.
 ```
 
 Expect refusal based on the lab role, no write_file request, shell workaround,
