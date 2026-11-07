@@ -69,6 +69,17 @@ whether generation stops immediately. Partial assistant text remains in the
 transcript with `interrupted` status. Ctrl-C at the prompt continues to cancel
 only the current input.
 
+Paste normally (Cmd+V on Mac), review the text, and press **Enter** to send.
+The Rich prompt joins pasted line breaks with spaces, keeping the whole paste
+as one input. Multiline pasted text is not interpreted as a slash command;
+single-line commands such as `/memory list` work whether typed or pasted.
+
+Bracketed paste is handled directly. For terminals that send raw pasted text,
+Enter has an 80ms grace period to collect the rest of an input burst. Trailing
+newlines in that burst do not submit it. This is a bounded input heuristic:
+unmarked paste chunks delayed more than 80ms can resemble separate manual inputs.
+Approval and credential prompts keep their normal input behavior.
+
 ## Switching to the minimal UI
 
 Change only the factory import in `main.py`:

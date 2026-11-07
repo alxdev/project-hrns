@@ -82,6 +82,9 @@ cp .env.example .env
 python -m harness
 ```
 
+In the Rich prompt, paste normally (Cmd+V on Mac), then press Enter to send.
+Pasted multiline text is joined with spaces into one prompt; no paste mode is needed.
+
 To use Anthropic instead:
 
 ```sh
