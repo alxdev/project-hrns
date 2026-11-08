@@ -111,7 +111,7 @@ async def choose_startup_model(
 
 
 async def main(argv: list[str] | None = None) -> int:
-    load_dotenv()
+    load_dotenv(Path.cwd() / ".env")
     config = parse_config(argv)
     configure_prompt_logging(config.log_prompt_sent_to_model)
     project_context = load_project_context(config.working_directory)

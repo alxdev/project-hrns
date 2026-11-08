@@ -18,6 +18,9 @@ dependencies = [
     "PyYAML>=6,<7",
 ]
 
+[project.scripts]
+project-hrns = "harness.cli:run"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8,<9",

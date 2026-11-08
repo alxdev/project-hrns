@@ -1,4 +1,48 @@
-# Python Harness
+# Project HRNS
+
+Project HRNS is a coding-agent harness that runs in the codebase you launch it
+from. Install the command once, change to a project directory, then run
+`project-hrns`. By default, that current directory is the harness workspace.
+
+## Install and run
+
+### Install with pip
+
+Install into the active Python environment, pointing to your local clone of
+this repository:
+
+```sh
+python -m pip install -e /path/to/python-hrns
+cd /path/to/your-codebase
+project-hrns
+```
+
+### Install with pipx
+
+`pipx` keeps the harness and its Python dependencies in an isolated environment
+while making the command available on your `PATH`:
+
+```sh
+pipx install --editable /path/to/python-hrns
+cd /path/to/your-codebase
+project-hrns
+```
+
+If `project-hrns` is not found after installing with pipx, run `pipx ensurepath`
+and restart your shell. Both installation methods install the editable local
+clone, so changes to the harness source take effect without reinstalling it.
+
+The harness loads project instructions and configuration from the current
+directory. Use `--working-dir /path/to/your-codebase` to select a different
+workspace explicitly. To provide a cloud provider key, set it in the shell
+environment or in the target codebase's `.env` file. Keep credentials out of
+version control.
+
+The module invocation remains available as an alternative:
+
+```sh
+python -m harness
+```
 
 The project is being built incrementally. The core is intentionally independent
 from the terminal UI so that different interfaces can be added later without
@@ -74,12 +118,12 @@ commands. This keeps planning/routing separate from workspace execution.
 Delegation itself is automatically allowed; approval is reserved for the
 subagent's actual file and shell operations.
 
-Run the application with:
+To start the harness from this repository, first configure a provider key:
 
 ```sh
 cp .env.example .env
 # Edit .env and set your provider API key.
-python -m harness
+project-hrns
 ```
 
 In the Rich prompt, paste normally (Cmd+V on Mac), then press Enter to send.
@@ -89,7 +133,7 @@ To use Anthropic instead:
 
 ```sh
 export HARNESS_PROVIDER=anthropic
-python -m harness
+project-hrns
 ```
 
 The application loads configuration from `.env` automatically. `.env` is
@@ -233,7 +277,7 @@ The regular OpenAI provider and OpenAI-compatible local providers are separate
 features. Local OpenAI-compatible models belong in `local_models.json`; do not
 move them into the regular OpenAI configuration.
 
-From the project directory, a local development setup can be created with:
+For development inside this repository, a local environment can be created with:
 
 ```sh
 python -m venv .venv
