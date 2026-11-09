@@ -37,7 +37,6 @@ nosetests.xml
 .env.*
 !.env.example
 *.local
-mcp.json
 
 # Harness runtime data and logs
 *.log
