@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from harness.config_paths import resolve_instruction_path
+
 
 @dataclass(frozen=True)
 class ProjectContext:
@@ -32,13 +34,21 @@ class ProjectContext:
         return "\n".join(lines)
 
 
-def load_project_context(working_directory: Path) -> ProjectContext:
-    """Load shared AGENTS.md for the root orchestrator."""
-    root_path = working_directory / "AGENTS.md"
-    root_content = _read_optional(root_path)
+def load_project_context(
+    working_directory: Path,
+    user_directory: Path | None = None,
+) -> ProjectContext:
+    """Load project AGENTS.md, falling back to the user's instructions file.
+
+    The project file replaces the user file when present; the two are never combined.
+    """
+    if user_directory is None:
+        user_directory = Path.home() / ".project-hrns"
+    root_path = resolve_instruction_path(working_directory, user_directory)
+    root_content = _read_optional(root_path) if root_path is not None else ""
     return ProjectContext(
         working_directory=working_directory,
-        root_path=root_path if root_content else None,
+        root_path=root_path,
         root_content=root_content,
     )
 

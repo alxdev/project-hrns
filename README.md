@@ -12,7 +12,8 @@ Install into the active Python environment, pointing to your local clone of
 this repository:
 
 ```sh
-python -m pip install -e /path/to/python-hrns
+python -m pip install -e /path/to/python-harness
+project-hrns init
 cd /path/to/your-codebase
 project-hrns
 ```
@@ -23,7 +24,8 @@ project-hrns
 while making the command available on your `PATH`:
 
 ```sh
-pipx install --editable /path/to/python-hrns
+pipx install --editable /path/to/python-harness
+project-hrns init
 cd /path/to/your-codebase
 project-hrns
 ```
@@ -31,12 +33,31 @@ project-hrns
 If `project-hrns` is not found after installing with pipx, run `pipx ensurepath`
 and restart your shell. Both installation methods install the editable local
 clone, so changes to the harness source take effect without reinstalling it.
+Run `project-hrns init` after installation to reset `~/.project-hrns` to the
+current configuration in the repository's root JSON files. Each run overwrites
+the user configuration files and refreshes the registered skill resources.
+The user-level `AGENTS.md` is reset to an empty file. Normal startup only reads
+configuration; it does not create or reset files. The reset preserves
+`tool-artifacts/` and other unrelated files in the user directory.
 
-The harness loads project instructions and configuration from the current
-directory. Use `--working-dir /path/to/your-codebase` to select a different
-workspace explicitly. To provide a cloud provider key, set it in the shell
-environment or in the target codebase's `.env` file. Keep credentials out of
-version control.
+The root `tools.json`, `skills.json`, `subagents.json`, `orchestrator.json`,
+`memory.json`, `mcp.json`, `local_models.json`, and `cloud_models.json` are the
+source of truth for `init`. Their current contents are copied into the user
+configuration. Skills are copied from `.agents/skills/` only when listed in
+the root `skills.json`; if that list is empty, no registered skill resources
+are installed. The generated user-level `AGENTS.md` is empty by default.
+
+For each JSON file, a file in the current project workspace takes precedence
+over its counterpart in `~/.project-hrns`. The project file replaces the user
+file; the files are not merged. The project `AGENTS.md` likewise replaces the
+user-level `~/.project-hrns/AGENTS.md`. Without a project `AGENTS.md`, the
+harness uses the user-level instructions file.
+
+The harness loads workspace configuration from the current directory. Use
+`--working-dir /path/to/your-codebase` to select another workspace explicitly.
+For `.env` values, variables already exported in the shell take priority,
+followed by the workspace `.env`, then `~/.project-hrns/.env`. Keep credentials
+out of version control.
 
 The module invocation remains available as an alternative:
 

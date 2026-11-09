@@ -93,6 +93,7 @@ def load_skills(
     registry_path: Path,
     project_root: Path,
     user_root: Path | None = None,
+    user_config_root: Path | None = None,
 ) -> SkillCatalog:
     """Load explicit registrations and standard .agents/skills directories."""
     skills: dict[str, Skill] = {}
@@ -100,6 +101,8 @@ def load_skills(
         user_root = Path.home()
 
     _discover(skills, user_root / ".agents" / "skills", "user")
+    if user_config_root is not None:
+        _discover(skills, user_config_root / "skills", "user")
     _discover(skills, project_root / ".agents" / "skills", "project")
     if registry_path.exists():
         _load_registry(skills, registry_path)

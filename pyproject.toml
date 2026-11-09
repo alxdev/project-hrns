@@ -34,6 +34,18 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.data-files]
+"share/project-hrns/templates" = [
+    "tools.json",
+    "skills.json",
+    "subagents.json",
+    "orchestrator.json",
+    "memory.json",
+    "mcp.json",
+    "local_models.json",
+    "cloud_models.json",
+]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 asyncio_mode = "auto"
