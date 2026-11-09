@@ -95,11 +95,36 @@ agents receive only the skills assigned to them, and skills do not grant extra
 tools or permissions.
 
 The root agent delegates focused work through configured subagent profiles.
-Optional experience memory adds `recall_experience` and `record_experience` to
-the orchestration loop. Records distinguish observed delegation evidence from
-root assessments and lessons, so later runs can use those lessons without
-treating unverified child claims as facts. Memory is disabled by default; enable
-it in `memory.json`.
+Experience memory is enabled by default. The root can recall bounded delegation
+evidence and lessons, then record a root assessment and an optional lesson after
+reviewing a completed delegation. Later runs can use saved lessons without
+treating unverified child claims as facts. Set `"enabled": false` in
+`memory.json` to disable it.
+
+### Example orchestration workflow
+
+```mermaid
+flowchart TD
+    U[User gives the root agent a task] --> O[Root applies orchestrator.json]
+    O --> Q[Recall relevant prior experience when useful]
+    Q --> D[delegate_subagent with a profile and focused task]
+    D --> S[Subagent receives its configured tools and skills]
+    S --> L[list_available_tools to discover available tools]
+    S --> A[activate_skill to load an assigned skill]
+    L --> W[Subagent uses assigned or approved tools]
+    A --> W
+    W --> R[Delegation returns result and harness-derived run evidence]
+    R --> C[Subagent may suggest a candidate lesson]
+    C --> J{Root LLM judges evidence and lesson}
+    J -->|Useful and supported| Save[record_experience with root assessment and optional lesson]
+    J -->|Not useful or unsupported| Skip[Do not save a lesson]
+    Save --> Later[Recall may inform a later orchestration]
+    Later --> O
+```
+
+The subagent cannot save orchestration memory. The root decides whether a
+candidate lesson is supported and useful; recording stores the root's assessment
+with harness-derived evidence. Writes follow the normal execution permissions.
 
 For the detailed subagent and memory behavior, see the
 [subagent guide](src/harness/subagents/README.md) and

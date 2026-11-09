@@ -17,7 +17,7 @@ The root agent is configured as a planner and router. Its tools are selected in 
 | `record_experience` | Records a root assessment and optional lesson for a completed delegation run in the current session. The harness supplies bounded run facts; this tool does not take transcripts or raw outputs. |
 | `activate_skill` | Loads the full instructions for an allowed skill. Activation supplies workflow guidance only; it does not grant tools or permissions. |
 
-`delegate_subagent` is registered by the runtime. The memory tools are registered when enabled in `memory.json` and selected by `orchestrator.json`. `activate_skill` is a configured handler in `tools.json` and is exposed to the root only when selected and the configured skills are assigned.
+`delegate_subagent` is registered by the runtime. The memory tools are registered when enabled in `memory.json` (enabled by default) and selected by `orchestrator.json`. `activate_skill` is a configured handler in `tools.json` and is exposed to the root only when selected and the configured skills are assigned.
 
 ### Tools assigned to subagents
 

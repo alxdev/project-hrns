@@ -168,10 +168,10 @@ The harness records runtime events without interpreting the child's claims;
 See [structured outcomes](../src/harness/subagents/README.md#structured-outcomes)
 for the schema and evidence limits.
 
-Optional experience memory adds root-only recall and recording of bounded
-delegation evidence, root assessments, and lessons. It is disabled by default;
-set `"enabled": true` in `memory.json` and restart to enable it. Writes inherit
-execution permissions, so non-interactive recording requires `--allow-tools`.
+Experience memory adds root-only recall and recording of bounded delegation
+evidence, root assessments, and lessons. It is enabled by default; set
+`"enabled": false` in `memory.json` to disable it. Writes inherit execution
+permissions, so non-interactive recording requires `--allow-tools`.
 Use `/memory status`, `/memory list`, `/memory show <id>`, and `/memory forget <id>`
 to inspect or remove records. See [experience memory](../src/harness/memory/README.md)
 for storage, evidence boundaries, budgets, and cancellation semantics.

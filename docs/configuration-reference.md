@@ -205,8 +205,10 @@ execution policy, including `--allow-tools` in non-interactive mode. Its full ac
 instructions remain protected during compaction; model switches preserve the root's
 system prompt and catalog.
 
-`memory.json` remains the feature/limits/write-policy switch. Assigned memory tools
-are inactive when memory is disabled, rather than breaking the root configuration.
+`memory.json` remains the feature/limits/write-policy switch and enables memory by
+default, including when the file is absent. Set `"enabled": false` to disable it.
+Assigned memory tools are inactive when memory is explicitly disabled, rather than
+breaking the root configuration.
 `/tools` and `/agents` show those inactive assignments and the root configuration mode.
 Removing `record_experience` permits recall-only experiments; `/memory` remains a
 user command for inspecting and forgetting stored records.
