@@ -172,3 +172,7 @@ mypy src
 The same checks are available through `make check`. See
 [`docs/development-phases.md`](docs/development-phases.md) for the detailed
 implementation history and phase notes.
+
+## Acknowledgements
+
+This harness was insipired by the workflow of https://www.byoharness.dev/ by BettaTech.
