@@ -43,9 +43,11 @@ configuration; it does not create or reset files. The reset preserves
 The root `tools.json`, `skills.json`, `subagents.json`, `orchestrator.json`,
 `memory.json`, `mcp.json`, `local_models.json`, and `cloud_models.json` are the
 source of truth for `init`. Their current contents are copied into the user
-configuration. Skills are copied from `.agents/skills/` only when listed in
-the root `skills.json`; if that list is empty, no registered skill resources
-are installed. The generated user-level `AGENTS.md` is empty by default.
+configuration. Skills are copied from `.agents/skills/` into
+`~/.project-hrns/skills/` only when listed in the root `skills.json`; the copied
+registry points to those `skills/` paths. If that list is empty, no registered
+skill resources are installed. The generated user-level `AGENTS.md` is empty
+by default.
 
 For each JSON file, a file in the current project workspace takes precedence
 over its counterpart in `~/.project-hrns`. The project file replaces the user

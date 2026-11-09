@@ -38,28 +38,10 @@ def initialize_user_config(
     if not isinstance(entries, list):
         raise ValueError(f"{templates / 'skills.json'} must contain a 'skills' array")
 
-    for filename in _CONFIG_FILES:
-        source = templates / filename
-        if not source.is_file():
-            raise FileNotFoundError(f"configuration template not found: {source}")
-        shutil.copyfile(source, destination / filename)
-
-    # A project-level instruction file overrides this empty user-level file.
-    (destination / "AGENTS.md").write_text("", encoding="utf-8")
-
-    discovered_skill_root = destination / "skills"
-    if discovered_skill_root.is_symlink():
-        discovered_skill_root.unlink()
-    elif discovered_skill_root.exists():
-        shutil.rmtree(discovered_skill_root)
-
-    skill_root = destination / ".agents" / "skills"
-    if skill_root.is_symlink():
-        skill_root.unlink()
-    elif skill_root.exists():
-        shutil.rmtree(skill_root)
-    skill_root.mkdir(parents=True, exist_ok=True)
-    for entry in entries:
+    installed_registry = json.loads(json.dumps(skills_registry))
+    installed_entries = installed_registry["skills"]
+    installed_locations: list[tuple[Path, Path]] = []
+    for entry in installed_entries:
         if not isinstance(entry, dict):
             raise ValueError("skills.json entries must be objects")
         location = entry.get("location")
@@ -78,15 +60,43 @@ def initialize_user_config(
             raise ValueError(f"skill location escapes its template directory: {location}")
         if not source.is_dir():
             raise FileNotFoundError(f"skill resources not found for {name!r}: {source}")
+
+        installed_location = Path("skills") / relative_location.name
+        entry["location"] = installed_location.as_posix()
+        installed_locations.append((source, installed_location))
+
+    for filename in _CONFIG_FILES:
+        source = templates / filename
+        if not source.is_file():
+            raise FileNotFoundError(f"configuration template not found: {source}")
+        if filename == "skills.json":
+            (destination / filename).write_text(
+                json.dumps(installed_registry, indent=2) + "\n", encoding="utf-8"
+            )
+        else:
+            shutil.copyfile(source, destination / filename)
+
+    # A project-level instruction file overrides this empty user-level file.
+    (destination / "AGENTS.md").write_text("", encoding="utf-8")
+
+    discovered_skill_root = destination / "skills"
+    if discovered_skill_root.is_symlink():
+        discovered_skill_root.unlink()
+    elif discovered_skill_root.exists():
+        shutil.rmtree(discovered_skill_root)
+
+    for source, relative_location in installed_locations:
         target = (destination / relative_location).resolve()
         try:
             target.relative_to(destination.resolve())
         except ValueError as exc:
-            raise ValueError(f"skill location escapes the user config directory: {location}") from exc
+            raise ValueError(
+                f"skill location escapes the user config directory: {relative_location}"
+            ) from exc
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source, target, dirs_exist_ok=True)
 
-    return destination, _CONFIG_FILES + ("AGENTS.md", ".agents/skills")
+    return destination, _CONFIG_FILES + ("AGENTS.md", "skills")
 
 
 def _template_directory() -> Path:
