@@ -1,6 +1,4 @@
-import asyncio
-
-from harness.main import main
+from harness.cli import run
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(run())

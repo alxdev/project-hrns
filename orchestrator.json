@@ -1,0 +1,11 @@
+{
+  "tools": [
+    "delegate_subagent",
+    "recall_experience",
+    "record_experience",
+    "activate_skill"
+  ],
+  "skills": [],
+  "mcp_servers": ["*"],
+  "max_turns": 20
+}

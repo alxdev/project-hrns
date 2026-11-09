@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import os
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -13,6 +15,7 @@ from harness.api.types import ToolDefinition
 from harness.commands import CommandContext, build_default_commands
 from harness.compaction import CompactionManager
 from harness.config import HarnessConfig, parse_config
+from harness.config_paths import resolve_config_path, user_config_directory
 from harness.mcp import MCPConfigStore, MCPToolManager
 from harness.memory import (
     MemoryManager,
@@ -25,6 +28,7 @@ from harness.memory import (
 from harness.model_catalog import ModelCatalog, ModelChoice, build_provider_for_choice
 from harness.model_selection import MODEL_PICKER_EXIT, ModelOption
 from harness.orchestration import root_system_prompt
+from harness.orchestrator import load_orchestrator
 from harness.permissions import AlwaysAllow, AlwaysAsk, AlwaysDeny, RoutedPermissionPolicy
 from harness.project_context import ProjectContext, load_project_context
 from harness.provider import (
@@ -53,6 +57,20 @@ from harness.transcript import Transcript, TranscriptEventSink
 from harness.ui.protocols import InputAdapter, OutputRenderer
 
 
+def _load_dotenv_for_run(argv: list[str] | None) -> None:
+    """Load project values before user values; pre-existing shell values win."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--working-dir", type=Path)
+    parser.add_argument("--harness-name")
+    parsed, _remaining = parser.parse_known_args(argv)
+    configured_working_directory = parsed.working_dir or Path(
+        os.environ.get("HARNESS_WORKING_DIR", Path.cwd())
+    )
+    load_dotenv(configured_working_directory.expanduser() / ".env", override=False)
+    harness_name = parsed.harness_name or os.environ.get("HARNESS_NAME", "project-hrns")
+    load_dotenv(user_config_directory(harness_name) / ".env", override=False)
+
+
 def build_provider(
     config: HarnessConfig,
     project_context: ProjectContext | None = None,
@@ -63,7 +81,12 @@ def build_provider(
     elif config.provider_name == "anthropic":
         provider = AnthropicProvider(model=config.model)
     elif config.provider_name == "local":
-        provider = LocalProvider(model=config.model)
+        provider = LocalProvider(
+            model=config.model,
+            config_path=resolve_config_path(
+                "local_models.json", config.working_directory, config.data_directory
+            ),
+        )
     else:
         raise ValueError(f"unsupported provider: {config.provider_name}")
     if project_context is not None:
@@ -110,11 +133,12 @@ async def choose_startup_model(
 
 
 async def main(argv: list[str] | None = None) -> int:
-    load_dotenv()
+    _load_dotenv_for_run(argv)
     config = parse_config(argv)
     configure_prompt_logging(config.log_prompt_sent_to_model)
-    project_context = load_project_context(config.working_directory)
-    model_catalog = ModelCatalog.load(Path.cwd())
+    user_directory = config.data_directory
+    project_context = load_project_context(config.working_directory, user_directory)
+    model_catalog = ModelCatalog.load(config.working_directory, user_directory)
     commands = build_default_commands()
     current_model_key: str | None = None
     current_choice: ModelChoice | None = None
@@ -162,7 +186,8 @@ async def main(argv: list[str] | None = None) -> int:
     compaction = CompactionManager(provider)
 
     try:
-        base_tools = load_tools(config.working_directory / "tools.json")
+        tools_path = resolve_config_path("tools.json", config.working_directory, user_directory)
+        base_tools = load_tools(tools_path)
     except ValueError as exc:
         message = f"invalid tools.json: {exc}"
         if output is None:
@@ -172,8 +197,9 @@ async def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         skill_catalog = load_skills(
-            config.working_directory / "skills.json",
+            resolve_config_path("skills.json", config.working_directory, user_directory),
             config.working_directory,
+            user_config_root=user_directory,
         )
     except SkillError as exc:
         message = f"invalid skills configuration: {exc}"
@@ -184,7 +210,9 @@ async def main(argv: list[str] | None = None) -> int:
         return 2
     artifact_root = config.data_directory / "tool-artifacts"
     try:
-        memory_config = load_memory_config(config.working_directory / "memory.json")
+        memory_config = load_memory_config(
+            resolve_config_path("memory.json", config.working_directory, user_directory)
+        )
     except ValueError as exc:
         message = f"invalid memory.json: {exc}"
         if output is None:
@@ -196,7 +224,10 @@ async def main(argv: list[str] | None = None) -> int:
     if not config.non_interactive:
         permissions = AlwaysAsk(make_tool_execution_approver(approve_tool, base_tools))
     try:
-        profiles = load_profiles(config.working_directory / "subagents.json", tool_catalog)
+        profiles_path = resolve_config_path(
+            "subagents.json", config.working_directory, user_directory
+        )
+        profiles = load_profiles(profiles_path, tool_catalog)
     except ValueError as exc:
         message = f"invalid subagents.json: {exc}"
         if output is None:
@@ -218,6 +249,24 @@ async def main(argv: list[str] | None = None) -> int:
             output.error(message)
         return 2
 
+    try:
+        orchestrator = load_orchestrator(
+            resolve_config_path("orchestrator.json", config.working_directory, user_directory),
+            native_tools=base_tools,
+            skills=skill_catalog,
+            memory_enabled=memory_config.enabled,
+        )
+    except ValueError as exc:
+        message = f"invalid orchestrator.json: {exc}"
+        if output is None:
+            print(message, file=sys.stderr)
+        else:
+            output.error(message)
+        return 2
+    root_skills = skill_catalog.for_names(orchestrator.skills)
+    if orchestrator.skills:
+        provider.system = provider.system.rstrip() + "\n\n" + root_skills.catalog_prompt()
+
     async def prompt_mcp_secret(variable: str) -> str:
         if input_adapter is None or output is None:
             raise ValueError(
@@ -228,9 +277,10 @@ async def main(argv: list[str] | None = None) -> int:
             return await input_adapter.prompt_secret(variable)
 
     mcp_manager = MCPToolManager(
-        MCPConfigStore(config.working_directory / "mcp.json"),
+        MCPConfigStore(resolve_config_path("mcp.json", config.working_directory, user_directory)),
         events,
         prompt_secret=prompt_mcp_secret if input_adapter is not None else None,
+        server_allowlists={"root": orchestrator.mcp_servers},
     )
     context = ToolContext(config.working_directory)
 
@@ -297,7 +347,7 @@ async def main(argv: list[str] | None = None) -> int:
                 return await input_adapter.approve(tool, arguments)
 
         persist_tool_access = make_profile_tool_access_persister(
-            config.working_directory / "subagents.json",
+            profiles_path,
             profile.name,
             approve_persist_tool,
             tool_catalog,
@@ -353,27 +403,42 @@ async def main(argv: list[str] | None = None) -> int:
         mcp=mcp_manager,
         working_directory=config.working_directory,
     )
-    delegation_tools = [
-        DelegationTool(profile.name, profile.description) for profile in profiles.values()
-    ]
-    for delegation_tool in delegation_tools:
-        delegation_tool.bind(subagents)
+    delegation_tool = DelegationTool()
+    delegation_tool.bind(subagents)
     # Keep the root agent as a strict planner/router. Workspace inspection,
     # file writes, and shell execution are available only through subagents.
-    registry = ToolRegistry(delegation_tools)
+    registry = ToolRegistry([delegation_tool])
     memory = MemoryManager(
         memory_config, MemoryStore(config.data_directory, config.working_directory), subagents
     )
     memory_snapshot = None
-    if memory_config.enabled:
+    if "recall_experience" in orchestrator.active_tools:
         recall = RecallExperience(memory)
         registry.register(recall)
-        registry.register(RecordExperience(memory))
         memory_snapshot = MemorySnapshot(recall, registry)
+    if "record_experience" in orchestrator.active_tools:
+        registry.register(RecordExperience(memory))
+    if "activate_skill" in orchestrator.active_tools:
+        registry.register(
+            next(tool for tool in base_tools if tool.definition.name == "activate_skill")
+        )
+    root_context = replace(
+        context,
+        skill_catalog=root_skills,
+        allowed_skills=orchestrator.skills,
+        allowed_read_roots=tuple(skill.root for skill in root_skills.skills.values()),
+        tool_registry=registry,
+    )
 
     async def load_global_mcp_tools() -> None:
-        for tool in await mcp_manager.tools_for("root"):
-            if not any(item.name == tool.definition.name for item in registry.definitions()):
+        tools = await mcp_manager.tools_for("root")
+        names = {tool.definition.name for tool in tools}
+        for name in registry.names():
+            if name.startswith("mcp_") and name not in names:
+                registry.unregister(name)
+        for tool in tools:
+            if registry.get(tool.definition.name) is not tool:
+                registry.unregister(tool.definition.name)
                 registry.register(tool)
 
     agent = Agent(
@@ -383,15 +448,17 @@ async def main(argv: list[str] | None = None) -> int:
             root_permissions,
             {
                 "mcp_": permissions,
+                "activate_skill": permissions,
                 "record_experience": permissions
                 if memory_config.write_policy == "inherit"
                 else AlwaysDeny(),
             },
         ),
-        context=context,
+        context=root_context,
         events=events,
         compaction=compaction,
         name="root",
+        max_turns=orchestrator.max_turns,
         before_send=load_global_mcp_tools,
         after_tool_batch=memory_snapshot,
     )
@@ -477,6 +544,7 @@ async def main(argv: list[str] | None = None) -> int:
         model_picker=pick_model,
         project_context=project_context,
         memory=memory,
+        orchestrator=orchestrator,
     )
     try:
         await InteractiveRunner(input_adapter, output, OperationController()).run(

@@ -143,7 +143,7 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
 
     manager = SubagentManager(factory, profiles)
     handle = manager.get("lab")
-    delegation = DelegationTool("lab", "Lab")
+    delegation = DelegationTool()
     delegation.bind(manager)
     assert await handle.run("Acquire") == "done"
     assert created[0].tools.get(name) is not None
@@ -166,7 +166,9 @@ async def test_saved_access_reaches_next_fresh_delegation(tmp_path, monkeypatch,
 
     # Both a pre-save handle and a pre-bound delegation tool resolve the update.
     assert await handle.run("Execute") == "done"
-    result = await delegation.execute(ToolContext(tmp_path), {"task": "Execute again"})
+    result = await delegation.execute(
+        ToolContext(tmp_path), {"profile": "lab", "task": "Execute again"}
+    )
     assert not result.is_error
     assert len(created) == 3
     for agent in created[1:]:

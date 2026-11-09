@@ -5,7 +5,6 @@ import os
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from importlib.metadata import PackageNotFoundError, metadata, packages_distributions
 from pathlib import Path
 
 
@@ -96,12 +95,5 @@ def parse_config(argv: Sequence[str] | None = None) -> HarnessConfig:
 
 
 def _default_harness_name() -> str:
-    """Use the installed distribution name associated with the harness package."""
-    for distribution in packages_distributions().get("harness", []):
-        try:
-            name = metadata(distribution)["Name"]
-        except (PackageNotFoundError, KeyError):
-            continue
-        if name:
-            return re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-._") or "harness"
-    return "harness"
+    """Return the stable Project HRNS user-directory name."""
+    return "project-hrns"

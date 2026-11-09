@@ -7,12 +7,13 @@ automatic skill generation.
 
 ## Enable and control it
 
-The repository's `memory.json` is disabled by default. A missing file also
-disables memory without creating storage or adding tools. To enable it, set:
+The repository's `memory.json` enables experience memory by default. A missing
+file also enables memory with the default limits and write policy. To disable
+it, set:
 
 ```json
 {
-  "enabled": true,
+  "enabled": false,
   "write_policy": "inherit",
   "max_records": 200,
   "max_recall_records": 5,

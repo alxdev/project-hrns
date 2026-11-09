@@ -31,7 +31,7 @@ def setup_manager(tmp_path, **options):
                     "analyst": {
                         "description": "Analyze documents.",
                         "system_prompt": "PRIVATE ROLE INSTRUCTIONS",
-                        "tools": ["read_file"],
+                        "tools": ["read_file", "activate_skill"],
                         "tool_artifacts": ["reporter"],
                         "skills": ["review"],
                         "permission_mode": "inherit",
@@ -49,7 +49,7 @@ def setup_manager(tmp_path, **options):
     manager = SubagentManager(
         lambda _profile: None, load_profiles(path, catalog), skill_catalog=skills, **options
     )
-    tool = DelegationTool("analyst", "Original description")
+    tool = DelegationTool()
     tool.bind(manager)
     return catalog, manager, tool
 
@@ -66,7 +66,7 @@ def test_summary_exposes_metadata_without_reading_or_validating_resources(tmp_pa
     monkeypatch.setattr(SkillCatalog, "activate", forbidden)
     description = tool.definition.description
 
-    assert description.startswith("Analyze documents.")
+    assert "Profile analyst:\nAnalyze documents." in description
     assert "native tool read_file [assigned; configured] — Read a UTF-8 text file" in description
     assert "native tool bash [requestable; configured]" in description
     assert "artifact reporter [assigned; undiscovered]" in description
@@ -77,10 +77,10 @@ def test_summary_exposes_metadata_without_reading_or_validating_resources(tmp_pa
     assert "do not guarantee approval or execution" in description
     assert "PRIVATE" not in description and "Unassigned skill" not in description
     assert "input_schema" not in description and "properties" not in description
-    assert description.replace("\n", "\n    ") in manager.describe()
-    assert tool.definition.name == "delegate_analyst"
-    assert tool.definition.input_schema["required"] == ["task"]
-    assert set(tool.definition.input_schema["properties"]) == {"task"}
+    assert manager.capability_description("analyst").replace("\n", "\n    ") in manager.describe()
+    assert tool.definition.name == "delegate_subagent"
+    assert tool.definition.input_schema["required"] == ["profile", "task"]
+    assert set(tool.definition.input_schema["properties"]) == {"profile", "task"}
 
 
 def test_artifact_observations_refresh_without_summary_filesystem_access(tmp_path, monkeypatch):
@@ -168,10 +168,12 @@ def test_missing_skill_metadata_and_absent_request_control_are_explicit(tmp_path
 async def test_removed_profile_preserves_delegation_error_result(tmp_path):
     _catalog, manager, delegation = setup_manager(tmp_path)
     manager.profiles.clear()
-    result = await delegation.execute(ToolContext(tmp_path), {"task": "Analyze"})
+    result = await delegation.execute(
+        ToolContext(tmp_path), {"profile": "analyst", "task": "Analyze"}
+    )
     assert result.is_error
     assert "unknown subagent" in result.content
-    assert delegation.definition.name == "delegate_analyst"
+    assert delegation.definition.name == "delegate_subagent"
 
 
 @pytest.mark.parametrize("failure", ["signature", "load"])

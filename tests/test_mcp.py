@@ -349,9 +349,11 @@ async def test_missing_oauth_environment_fails_gmail_delegation_before_model_cal
         tool_loader=mcp.tools_for,
         events=events,
     )
-    tool = DelegationTool("gmail", "Use Gmail tools")
+    tool = DelegationTool()
     tool.bind(subagents)
-    result = await tool.execute(ToolContext(tmp_path), {"task": "Read my latest emails"})
+    result = await tool.execute(
+        ToolContext(tmp_path), {"profile": "gmail", "task": "Read my latest emails"}
+    )
 
     assert result.is_error
     assert "GOOGLE_CLIENT_ID is not set" in result.content
@@ -408,7 +410,7 @@ async def test_capability_summary_tracks_scoped_mcp_discovery_without_starting_i
     mcp = MCPToolManager(store, EventCollector())
     mcp._client_factory = FakeClient
     manager = SubagentManager(lambda _profile: None, {"explorer": profile("explorer")}, mcp=mcp)
-    delegation = DelegationTool("explorer", "Explore")
+    delegation = DelegationTool()
     delegation.bind(manager)
     registry = ToolRegistry([delegation])
 

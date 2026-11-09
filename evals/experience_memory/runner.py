@@ -233,7 +233,7 @@ def scripted_provider(role: str, fixture: Fixture, enabled: bool) -> ScriptedPro
             if remembered:
                 task["remembered_strategy"] = remembered
             step = 2
-            return _response("delegate_worker", {"task": json.dumps(task)})
+            return _response("delegate_subagent", {"profile": "worker", "task": json.dumps(task)})
         if step == 2:
             outcome = _last_result(messages)
             step = 3
@@ -389,7 +389,7 @@ async def run_session(
         subagents = SubagentManager(
             child, {"worker": profile}, events=session, working_directory=workspace
         )
-        delegation = DelegationTool("worker", profile.description)
+        delegation = DelegationTool()
         delegation.bind(subagents)
         registry = ToolRegistry([delegation])
         memory = MemoryManager(

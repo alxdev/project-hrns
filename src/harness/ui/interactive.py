@@ -35,7 +35,15 @@ class InteractiveRunner:
             if not prompt.strip():
                 continue
 
-            command = commands.dispatch(prompt, command_context)
+            # Flattened multiline pastes are still documents, even if they
+            # begin with a slash. Ordinary single-line commands remain usable.
+            command = (
+                commands.dispatch(prompt, command_context)
+                if "\n" not in prompt
+                and "\r" not in prompt
+                and not getattr(self.input, "last_input_was_multiline_paste", False)
+                else None
+            )
             if command is not None:
                 if command.text:
                     self.output.write(command.text)

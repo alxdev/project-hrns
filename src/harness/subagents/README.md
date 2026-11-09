@@ -19,7 +19,7 @@ For example, after installing an artifact named `csv_summary`:
       "description": "Inspect files and summarize CSV data.",
       "system_prompt": "Analyze the assigned files and report findings.",
       "permission_mode": "inherit",
-      "tools": ["read_file"],
+      "tools": ["read_file", "activate_skill"],
       "tool_artifacts": ["csv_summary"],
       "skills": ["project-summary"],
       "max_turns": 10
@@ -28,7 +28,7 @@ For example, after installing an artifact named `csv_summary`:
 }
 ```
 
-The profile name determines its delegation tool, here `delegate_analyst`.
+The profile name is selected through `delegate_subagent`, here `"profile": "analyst"`.
 `description`, `system_prompt`, `permission_mode`, and `tools` are required.
 Permission modes are `inherit`, `ask`, `auto_allow`, and `deny`.
 `max_turns` defaults to 10 and must be a positive integer.
@@ -40,7 +40,13 @@ Unknown names, wrong-field assignments, and duplicates within or across the
 arrays are rejected. Both arrays feed the same runtime tool set and follow
 the same discovery, approval, and execution policy.
 
-`skills` defaults to `[]`. MCP-only profiles can use `"tools": []` and
+`skills` defaults to `[]`. A nonempty `skills` array requires the canonical
+`activate_skill` name explicitly in `tools`, backed by the actual `activate_skill`
+handler in `tools.json`. Missing activation is a configuration error; the loader
+does not add it automatically. Profiles without skills need not include it, and
+explicitly including it does not grant access to any unassigned skill. Installed
+`request_tool` and `list_available_tools` controls are still added automatically.
+MCP-only profiles can use `"tools": []` and
 `"requires_tools": true` to require tools before running; `requires_tools`
 defaults to false. Tool implementations and permission enforcement remain in
 Python.
@@ -65,7 +71,7 @@ or locations:
 }
 ```
 
-A profile's `skills` array selects the child's catalog. Each root delegation tool
+A profile's `skills` array selects the child's catalog. The root delegation tool
 includes the assigned skill names and concise catalog descriptions for routing;
 unassigned skills are excluded. The root may name a skill explicitly in the
 delegation `task`. The child model selects and activates relevant assigned skills.
@@ -74,9 +80,11 @@ It calls `activate_skill` to load the full instructions, skill directory, and su
 file inventory. Successful activation adds a protected instruction message;
 repeated activation reuses it, and compaction preserves its complete content.
 Skills grant neither tools nor permissions, and an empty `skills` array permits
-no activation. The root orchestrator receives project `AGENTS.md` context
-rather than full skill instructions. Capability summaries do not change either
-agent's system prompt.
+no activation. The root receives project `AGENTS.md` context and may have its own
+independent skill assignment in `orchestrator.json`; root activation requires an
+explicit `activate_skill` tool and follows the execution policy. Full child skill
+instructions are not automatically shared with root. Capability summaries do not
+change either agent's system prompt.
 
 For `read_file`, an existing workspace path takes precedence. A missing relative
 path falls back to a unique readable file in assigned skill roots; multiple
@@ -140,14 +148,15 @@ assuming a missing capability; required skill steps must not be silently skipped
 
 ## Delegation
 
-The main agent receives one tool per profile, such as `delegate_explorer` or
-`delegate_coder`. Its description is generated from current profile assignments,
+The main agent receives one `delegate_subagent` tool with required `profile` and
+`task` arguments. Its profile enum and catalog are generated from current configured profiles,
 the skill catalog, and existing tool/MCP observations. The same summary appears
 in `/agents`, including:
 
 - The profile's role, native tools with concise descriptions, and controls such
   as `list_available_tools`, `request_tool`, and `activate_skill` when installed
-  and assigned (including controls automatically added by profile loading).
+  and assigned (`list_available_tools` and `request_tool` are automatically added
+  by profile loading; `activate_skill` must be explicitly assigned).
 - Assigned artifacts and their last known state: undiscovered, last validated,
   or unavailable. Unassigned native tools and already discovered artifacts are
   labeled requestable only when `request_tool` is assigned.
@@ -166,13 +175,22 @@ after saved grants, artifact observations/replacements, or MCP discovery and
 configuration changes. Transient grants in a live child's registry are excluded
 from future-delegation summaries. Capability summaries themselves add no persistent state.
 
-Each delegation tool still accepts only:
+The delegation tool accepts only:
 
 ```json
 {
+  "profile": "explorer",
   "task": "Find the configuration files and summarize them."
 }
 ```
+
+All profiles in the current manager are selectable. Adding a profile to
+`subagents.json` and restarting exposes it without editing `orchestrator.json`
+or registering another tool. Runtime profile/assignment changes refresh the same
+tool's metadata. An empty catalog is reported explicitly; unknown profiles and
+missing or blank arguments return structured preflight failures without creating a run.
+There are no per-profile tool aliases. Older root configurations using
+`delegate_<profile>` names must replace those entries with `delegate_subagent`.
 
 Every delegation creates a fresh child, which runs its own tool loop to complete
 the focused `task`. The root retains previous results and supplies any earlier
@@ -279,8 +297,9 @@ the root's tools and the same capability summaries used for model routing.
 
 ## Tool ownership
 
-The root agent is intentionally restricted to delegation tools. It cannot call
-`read_file`, `write_file`, or `bash` directly. This enforces a strict planner /
+The root's `orchestrator.json` selects delegation, memory, and skill-activation
+controls plus an MCP server allowlist. It cannot call native `read_file`,
+`write_file`, or `bash` directly. This enforces a strict planner /
 executor boundary:
 
 - `explorer` may use `read_file` for read-only investigation.
@@ -386,7 +405,8 @@ For adding native Python handlers to the harness itself, see
 MCP servers can be assigned to one profile or made global with `/mcp add`.
 Profile-scoped tools are discovered synchronously before the profile's first
 agent loop, then cached for the session. Global tools are discovered before the
-root agent's first loop and are also included for subagents. Discovery activity
+root agent's first loop only when admitted by its `orchestrator.json` MCP allowlist,
+and are also included for subagents according to `mcp.json`. Discovery activity
 is emitted through the generic event sink; the UI shows the current server and
 logs the resulting tool count or the server's error. MCP tools use the same
 registry, permission policy, and cancellation path as built-in tools.

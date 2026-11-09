@@ -66,7 +66,14 @@ async def test_main_root_only_memory_permissions_and_noninteractive_wrapper(
             return done()
         if index == 1:
             return ProviderResponse(
-                [ToolCall("delegate", "delegate_worker", {"task": "Bounded work"})], "tool_use"
+                [
+                    ToolCall(
+                        "delegate",
+                        "delegate_subagent",
+                        {"profile": "worker", "task": "Bounded work"},
+                    )
+                ],
+                "tool_use",
             )
         if index == 2:
             outcome = json.loads(messages[-1].content[0].content)

@@ -26,7 +26,7 @@ def test_lab_catalog_and_profile_resolve_without_user_home(tmp_path):
             "skill-lab": {
                 "description": "Run isolated lab fixture checks.",
                 "system_prompt": "Use only the assigned lab fixtures and capabilities.",
-                "tools": ["read_file", "bash", "tool_authoring"],
+                "tools": ["read_file", "bash", "tool_authoring", "activate_skill"],
                 "tool_artifacts": [],
                 "skills": ["hello-workflow", *LAB_SKILLS],
                 "permission_mode": "inherit",
@@ -49,7 +49,7 @@ def test_lab_catalog_and_profile_resolve_without_user_home(tmp_path):
         "list_available_tools",
         "request_tool",
     }
-    assert DelegationTool(profile.name, profile.description).definition.name == "delegate_skill-lab"
+    assert DelegationTool().definition.name == "delegate_subagent"
     assert {"hello-workflow", "project-summary"} <= catalog.skills.keys()
     for name in LAB_SKILLS:
         skill = catalog.get(name)

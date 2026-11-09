@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, cast
 from urllib.parse import urlparse, urlunparse
 
@@ -26,14 +26,16 @@ class MCPToolManager:
         store: MCPConfigStore,
         events: EventSink,
         prompt_secret: Callable[[str], Awaitable[str]] | None = None,
+        server_allowlists: Mapping[str, tuple[str, ...]] | None = None,
     ) -> None:
         self.store = store
         self.events = events
         self.prompt_secret = prompt_secret
+        self._server_allowlists = dict(server_allowlists or {})
         self._load_tasks: dict[tuple[str, str], asyncio.Task[tuple[Tool, ...]]] = {}
         self._client_factory: Any = None
         self._auth_states: dict[tuple[str, str], Any] = {}
-        self._tools_by_scope: dict[str, tuple[Tool, ...]] = {}
+        self._tools_by_scope: dict[str, tuple[list[MCPServerConfig], tuple[Tool, ...]]] = {}
         self._server_errors: dict[tuple[str, str], str] = {}
 
     def registered_servers(self) -> list[MCPServerConfig]:
@@ -48,13 +50,23 @@ class MCPToolManager:
         self._tools_by_scope.clear()
         return removed
 
+    def _servers_for(self, profile: str) -> list[MCPServerConfig]:
+        allowed = self._server_allowlists.get(profile, ("*",))
+        if not allowed:
+            return []
+        return [
+            server
+            for server in self.store.load()
+            if server.applies_to(profile) and ("*" in allowed or server.name in allowed)
+        ]
+
     async def close(self) -> None:
         for state in self._auth_states.values():
             await state.close()
 
     def cached_tools_for(self, profile: str) -> tuple[Tool, ...]:
         try:
-            servers = [server for server in self.store.load() if server.applies_to(profile)]
+            servers = self._servers_for(profile)
         except ValueError:
             return ()
         tools: dict[str, Tool] = {}
@@ -72,7 +84,7 @@ class MCPToolManager:
     def discovery_details(self, profile: str) -> list[tuple[str, str, str]]:
         """Read configured scope and existing discovery state without starting I/O."""
         try:
-            servers = [server for server in self.store.load() if server.applies_to(profile)]
+            servers = self._servers_for(profile)
         except ValueError as exc:
             return [("mcp.json", "configured", f"unavailable (configuration error): {exc}")]
         statuses: list[tuple[str, str, str]] = []
@@ -91,22 +103,22 @@ class MCPToolManager:
         return statuses
 
     async def tools_for(self, profile: str) -> tuple[Tool, ...]:
-        cached = self._tools_by_scope.get(profile)
-        if cached is not None:
-            return cached
         try:
-            servers = [server for server in self.store.load() if server.applies_to(profile)]
+            servers = self._servers_for(profile)
         except ValueError as exc:
             await self.events.emit(MCPDiscoveryEvent(profile, "mcp.json", "started"))
             await self.events.emit(MCPDiscoveryEvent(profile, "mcp.json", "failed", error=str(exc)))
             raise MCPDiscoveryError(f"MCP configuration error for {profile}: {exc}") from exc
+        cached = self._tools_by_scope.get(profile)
+        if cached is not None and cached[0] == servers:
+            return cached[1]
         results = await asyncio.gather(*(self._load_once(server, profile) for server in servers))
         unique: dict[str, Tool] = {}
         for group in results:
             for tool in group:
                 unique.setdefault(tool.definition.name, tool)
         tools = tuple(unique.values())
-        self._tools_by_scope[profile] = tools
+        self._tools_by_scope[profile] = (servers, tools)
         return tools
 
     async def _load_once(self, server: MCPServerConfig, profile: str) -> tuple[Tool, ...]:

@@ -10,7 +10,7 @@ from typing import Literal, cast
 
 @dataclass(frozen=True)
 class MemoryConfig:
-    enabled: bool = False
+    enabled: bool = True
     write_policy: Literal["inherit", "deny"] = "inherit"
     max_records: int = 200
     max_recall_records: int = 5
@@ -33,7 +33,7 @@ def load_memory_config(path: Path) -> MemoryConfig:
     }
     if not isinstance(raw, dict) or set(raw) - allowed:
         raise ValueError("memory.json must be an object containing only documented memory controls")
-    enabled = raw.get("enabled", False)
+    enabled = raw.get("enabled", True)
     if not isinstance(enabled, bool):
         raise ValueError("memory enabled must be boolean")
     policy = raw.get("write_policy", "inherit")

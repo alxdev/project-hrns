@@ -33,9 +33,9 @@ def test_root_preserves_requested_scope_and_leaves_skill_specification_to_child(
 
 
 def test_delegation_description_limits_verification_without_expanding_output_scope():
-    schema = DelegationTool("coder", "Configured role").definition.input_schema
-    assert schema["required"] == ["task"]
-    assert set(schema["properties"]) == {"task"}
+    schema = DelegationTool().definition.input_schema
+    assert schema["required"] == ["profile", "task"]
+    assert set(schema["properties"]) == {"profile", "task"}
     description = schema["properties"]["task"]["description"]
     assert "the user's requested scope, exact targets, inputs, constraints" in description
     assert "verification only as needed and proportional to establish the requested" in description
@@ -44,14 +44,24 @@ def test_delegation_description_limits_verification_without_expanding_output_sco
     assert "ordinary intermediate discovery and harness approvals in this assignment" in description
 
 
-def test_outcome_guidance_and_profile_metadata_keep_task_only_api():
+def test_outcome_guidance_and_profile_metadata_use_one_profile_selector():
     profiles = json.loads((ROOT / "subagents.json").read_text())["profiles"]
+    manager = SubagentManager(
+        lambda _profile: None,
+        {
+            name: SubagentProfile(name, config["description"], config["system_prompt"])
+            for name, config in profiles.items()
+        },
+    )
+    tool = DelegationTool()
+    tool.bind(manager)
     for name, config in profiles.items():
-        definition = DelegationTool(name, config["description"]).definition
-        assert definition.name == f"delegate_{name}"
-        assert definition.description == config["description"]
-        assert definition.input_schema["required"] == ["task"]
-        assert set(definition.input_schema["properties"]) == {"task"}
+        definition = tool.definition
+        assert definition.name == "delegate_subagent"
+        assert config["description"] in definition.description
+        assert name in definition.input_schema["properties"]["profile"]["enum"]
+        assert definition.input_schema["required"] == ["profile", "task"]
+        assert set(definition.input_schema["properties"]) == {"profile", "task"}
         description = definition.input_schema["properties"]["task"]["description"]
         assert "complete bounded outcome" in description
         assert "exact targets, inputs, constraints" in description
@@ -86,8 +96,8 @@ async def test_child_owns_real_discovery_access_approval_and_outcome(tmp_path, s
                 [
                     ToolCall(
                         "delegate",
-                        "delegate_worker",
-                        {"task": task},
+                        "delegate_subagent",
+                        {"profile": "worker", "task": task},
                     )
                 ],
                 "tool_use",
@@ -151,7 +161,7 @@ async def test_child_owns_real_discovery_access_approval_and_outcome(tmp_path, s
     manager = SubagentManager(
         lambda _profile: child, {"worker": SubagentProfile("worker", "Worker", "Worker")}
     )
-    delegate = DelegationTool("worker", "Worker")
+    delegate = DelegationTool()
     delegate.bind(manager)
     root = Agent(
         root_provider,
@@ -163,7 +173,7 @@ async def test_child_owns_real_discovery_access_approval_and_outcome(tmp_path, s
     assert await root.send("Complete assigned workflow") == "Received outcome"
     assert len(root_provider.calls) == 2
     assigned = root_provider.calls[0][1][0]
-    assert assigned.name == "delegate_worker"
+    assert assigned.name == "delegate_subagent"
     task = manager.records()[0].prompt
     assert child_provider.calls[0][0][-1].content[0].text.endswith(task)
     if scenario != "discovery_only":

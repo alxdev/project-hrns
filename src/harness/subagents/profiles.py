@@ -9,6 +9,8 @@ from harness.tools.artifact_errors import InvalidArtifactError
 from harness.tools.artifacts import ArtifactTool
 from harness.tools.base import Tool
 from harness.tools.catalog import ToolCatalog
+from harness.tools.handlers.activate_skill import execute as activate_skill
+from harness.tools.loader import ConfiguredTool
 
 from .models import SubagentProfile
 
@@ -72,6 +74,13 @@ def _build_profile(
         allowed = ", ".join(sorted(PERMISSION_MODES))
         raise ValueError(f"{path} profile {name!r} permission_mode must be one of: {allowed}")
 
+    configured_skills = config.get("skills", [])
+    if not isinstance(configured_skills, list) or not all(
+        isinstance(skill_name, str) and skill_name.strip() for skill_name in configured_skills
+    ):
+        raise ValueError(f"{path} profile {name!r} skills must be an array of strings")
+    skill_names = tuple(configured_skills)
+
     selected_tools: list[Tool] = []
     unavailable_artifacts: dict[str, str] = {}
     assigned: set[str] = set()
@@ -85,6 +94,10 @@ def _build_profile(
             if tool_name in assigned:
                 raise ValueError(f"{path} profile {name!r} duplicate tool assignment {tool_name!r}")
             assigned.add(tool_name)
+    if skill_names and "activate_skill" not in fields["tools"]:
+        raise ValueError(
+            f"{path} profile {name!r} skills requires explicit 'activate_skill' in tools"
+        )
     for field, configured in fields.items():
         for tool_name in configured:
             if tool_catalog is not None and field == "tool_artifacts":
@@ -118,19 +131,16 @@ def _build_profile(
                 )
             selected_tools.append(tool)
 
-    configured_skills = config.get("skills", [])
-    if not isinstance(configured_skills, list) or not all(
-        isinstance(skill_name, str) and skill_name.strip() for skill_name in configured_skills
-    ):
-        raise ValueError(f"{path} profile {name!r} skills must be an array of strings")
-    skill_names = tuple(configured_skills)
+    if "activate_skill" in fields["tools"]:
+        activation = tool_by_name.get("activate_skill")
+        if not isinstance(activation, ConfiguredTool) or activation.handler is not activate_skill:
+            raise ValueError(
+                f"{path} profile {name!r} tools 'activate_skill' requires the "
+                "activate_skill handler in tools.json"
+            )
     selected_names = {tool.definition.name for tool in selected_tools}
-    for control_tool in ("request_tool", "list_available_tools", "activate_skill"):
-        if (
-            control_tool in tool_by_name
-            and (control_tool != "activate_skill" or skill_names)
-            and control_tool not in selected_names
-        ):
+    for control_tool in ("request_tool", "list_available_tools"):
+        if control_tool in tool_by_name and control_tool not in selected_names:
             selected_tools.append(tool_by_name[control_tool])
 
     max_turns = config.get("max_turns", 10)

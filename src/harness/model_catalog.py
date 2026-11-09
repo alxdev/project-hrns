@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from harness.config_paths import resolve_config_path
 from harness.model_selection import ModelOption
 from harness.provider import (
     AnthropicProvider,
@@ -24,6 +25,7 @@ class ModelChoice:
     model: str
     name: str
     options: dict[str, Any]
+    config_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -31,9 +33,13 @@ class ModelCatalog:
     choices: tuple[ModelChoice, ...]
 
     @classmethod
-    def load(cls, root: Path) -> ModelCatalog:
+    def load(cls, root: Path, user_root: Path | None = None) -> ModelCatalog:
         choices: list[ModelChoice] = []
-        local_path = root / "local_models.json"
+        local_path = (
+            resolve_config_path("local_models.json", root, user_root)
+            if user_root is not None
+            else root / "local_models.json"
+        )
         if local_path.exists():
             local = load_local_models(local_path)
             for provider_name, provider in local.providers.items():
@@ -45,10 +51,15 @@ class ModelCatalog:
                             model=f"{provider_name}/{model.model_id}",
                             name=model.name,
                             options=provider.options,
+                            config_path=local_path,
                         )
                     )
 
-        cloud_path = root / "cloud_models.json"
+        cloud_path = (
+            resolve_config_path("cloud_models.json", root, user_root)
+            if user_root is not None
+            else root / "cloud_models.json"
+        )
         if cloud_path.exists():
             choices.extend(_load_cloud_models(cloud_path))
         return cls(tuple(choices))
@@ -134,7 +145,7 @@ def build_provider_for_choice(choice: ModelChoice) -> ConfiguredProvider:
             raise ValueError(f"baseURL for {choice.key} must be a string")
         return AnthropicProvider(api_key=api_key, model=choice.model, base_url=base_url)
     if choice.provider == "local":
-        return LocalProvider(model=choice.model)
+        return LocalProvider(model=choice.model, config_path=choice.config_path)
     raise ValueError(f"unsupported model provider: {choice.provider}")
 
 

@@ -46,7 +46,14 @@ async def test_main_delivers_task_guidance_to_every_profile(tmp_path, monkeypatc
     root = MockProvider(
         [
             ProviderResponse(
-                [ToolCall("delegate", "delegate_worker", {"task": "Report a finding"})], "tool_use"
+                [
+                    ToolCall(
+                        "delegate",
+                        "delegate_subagent",
+                        {"profile": "worker", "task": "Report a finding"},
+                    )
+                ],
+                "tool_use",
             ),
             done("Received finding"),
         ]
@@ -134,12 +141,18 @@ async def test_delegated_loop_returns_final_output_or_failure_facts(
     manager = SubagentManager(
         lambda _profile: child, {"worker": SubagentProfile("worker", "Worker", prompt)}
     )
-    delegate = DelegationTool("worker", "Worker")
+    delegate = DelegationTool()
     delegate.bind(manager)
     root_provider = MockProvider(
         [
             ProviderResponse(
-                [ToolCall("delegate", "delegate_worker", {"task": "Acquire, execute, report"})],
+                [
+                    ToolCall(
+                        "delegate",
+                        "delegate_subagent",
+                        {"profile": "worker", "task": "Acquire, execute, report"},
+                    )
+                ],
                 "tool_use",
             ),
             done("Received child report"),

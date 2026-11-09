@@ -6,7 +6,8 @@
       "tools": [
         "read_file",
         "bash",
-        "tool_authoring"
+        "tool_authoring",
+        "activate_skill"
       ],
       "tool_artifacts": [
         "textmetrics",
@@ -27,7 +28,8 @@
       "description": "Investigate the codebase and return a focused answer. Prefer this over reading files yourself for read-only questions.",
       "system_prompt": "You are an exploration subagent. Investigate the codebase using your read-only tools and return a concise, evidence-based answer.",
       "tools": [
-        "read_file"
+        "read_file",
+        "activate_skill"
       ],
       "tool_artifacts": [],
       "skills": [
@@ -43,7 +45,8 @@
       "tools": [
         "read_file",
         "write_file",
-        "bash"
+        "bash",
+        "activate_skill"
       ],
       "tool_artifacts": [],
       "skills": [
