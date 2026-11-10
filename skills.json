@@ -1,3 +1,29 @@
 {
-  "skills": []
+  "skills": [
+    {
+      "name": "lab-resource-check",
+      "description": "Verify bundled skill-lab resources with a deterministic read-only check.",
+      "location": ".agents/skills/lab-resource-check"
+    },
+    {
+      "name": "lab-command-check",
+      "description": "Exercise native bash acquisition and diagnose simulated local command failures.",
+      "location": ".agents/skills/lab-command-check"
+    },
+    {
+      "name": "lab-text-metrics",
+      "description": "Test explicitly requested reusable text-metrics artifact creation and reuse.",
+      "location": ".agents/skills/lab-text-metrics"
+    },
+    {
+      "name": "project-summary",
+      "description": "Inspect a project and produce a concise, evidence-based summary of its structure.",
+      "location": ".agents/skills/project-summary"
+    },
+    {
+      "name": "hello-workflow",
+      "description": "Demonstrate a small reusable workflow with a clear checklist and final report.",
+      "location": ".agents/skills/hello-workflow"
+    }
+  ]
 }
