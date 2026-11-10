@@ -38,7 +38,7 @@ def format_startup_message(
 ) -> str:
     return "\n".join(
         [
-            f"Python Harness · model: {model} · directory: {working_directory}",
+            f"Project HRNS · model: {model} · directory: {working_directory}",
             format_runtime_configuration(
                 provider=provider,
                 model=model,

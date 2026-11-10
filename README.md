@@ -19,13 +19,14 @@ experience and lessons.
 
 ## Install and run
 
-Install from a local clone of this repository with either `pip` or `pipx`.
-Both methods install the editable source tree.
+Install Project HRNS from a local checkout with either `pip` or `pipx`.
+Both methods install the editable source tree, so the installed command uses
+the code in that checkout.
 
 ### With pip
 
 ```sh
-python -m pip install -e /path/to/python-harness
+python -m pip install -e /path/to/project-hrns
 project-hrns init
 cd /path/to/your-codebase
 project-hrns
@@ -34,7 +35,7 @@ project-hrns
 ### With pipx
 
 ```sh
-pipx install --editable /path/to/python-harness
+pipx install --editable /path/to/project-hrns
 project-hrns init
 cd /path/to/your-codebase
 project-hrns
@@ -45,6 +46,14 @@ the JSON resources in this repository. It replaces the harness configuration
 files and registered skills, and resets the user `AGENTS.md` to an empty file.
 It preserves `tool-artifacts/` and unrelated files. Run `init` again whenever
 you want to reset to the current repository defaults.
+
+> **Warning:** Running `project-hrns init` overwrites the user-level
+> `tools.json`, `skills.json`, `subagents.json`, `orchestrator.json`,
+> `memory.json`, `mcp.json`, `local_models.json`, and `cloud_models.json` in
+> `~/.project-hrns/`. It also clears and reinstalls the registered `skills/`
+> directory and replaces `AGENTS.md` with an empty file. Back up any personal
+> settings or instructions you want to keep before running it. The command
+> preserves `tool-artifacts/` and unrelated files in that directory.
 
 The command uses the current directory as its workspace. Pass
 `--working-dir /path/to/your-codebase` to select another workspace. If installed

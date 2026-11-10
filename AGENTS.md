@@ -1,4 +1,4 @@
-# Python Harness project context
+# Project HRNS project context
 
 ## Purpose
 
