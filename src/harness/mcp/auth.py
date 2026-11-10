@@ -224,7 +224,7 @@ async def _oauth_provider(
     yield OAuthClientProvider(
         server_url=url,
         client_metadata=OAuthClientMetadata(
-            client_name="Python Harness MCP client",
+            client_name="Project HRNS MCP client",
             redirect_uris=[AnyUrl(redirect_uri)],
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],

@@ -1,6 +1,6 @@
 # Native Tools and Skills
 
-This page lists the tools and skills that ship with this Python Harness repository or are provided directly by the harness runtime. Availability depends on the active agent profile and configuration: a tool can be installed without being assigned to every agent.
+This page lists the tools and skills that ship with Project HRNS or are provided directly by the harness runtime. Availability depends on the active agent profile and configuration: a tool can be installed without being assigned to every agent.
 
 ## Native tools
 
